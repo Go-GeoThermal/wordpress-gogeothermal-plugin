@@ -4,28 +4,33 @@ if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-class admin_menu_page
+class Sinappsus_GGT_Admin_UI
 {
     public function __construct()
     {
         add_action('admin_menu', [$this, 'register_admin_menu']);
     }
 
-    public function register_admin_menu()
+    public function sinappsus_ggt_wp_plugin($links)
     {
-        add_menu_page(
-            'Authentication',
-            'manage_options',
-            [$this, 'admin_menu_page'],
-            'dashicons-admin-settings',
-            90
+        $settings_url = add_query_arg(
+            array(
+                'page' => 'sinappsus-ggt-settings',
+                'tab' => 'integration',
+                'section' => 'sinappsus_ggt_wp_plugin',
+            ),
+            admin_url('admin.php')
         );
+    
+        $plugin_links = array(
+            '<a href="' . esc_url($settings_url) . '">' . __('Settings', 'sinappsus-ggt-wp-plugin') . '</a>',
+            '<a href="#">' . __('Support', 'sinappsus-ggt-wp-plugin') . '</a>',
+            '<a href="#">' . __('Docs', 'sinappsus-ggt-wp-plugin') . '</a>',
+        );
+    
+        return array_merge($plugin_links, $links);
     }
 
-    public function admin_menu_page()
-    {
-        // Display the admin page with options to override and approve users/orders
-        echo '<div class="wrap"><h1>Sage Integration Admin</h1>';
-        echo '</div>';
-    }
+    add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'sinappsus_ggt_wp_plugin');
+    
 }
