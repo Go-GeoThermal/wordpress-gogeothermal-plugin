@@ -14,10 +14,11 @@ defined('ABSPATH') || exit;
 
 define('GGT_SINAPPSUS_PLUGIN_VERSION', '0.0.5');
 define('GGT_SINAPPSUS_PLUGIN_URL', untrailingslashit(plugins_url(basename(plugin_dir_path(__FILE__)), basename(__FILE__))));
-define('GGT_SINAPPSUS_PLUGIN_PATH', untrailingslashit(plugin_dir_path(__FILE__)));
+define('GGT_SINAPPSUS_PLUGIN_PATH', plugin_dir_path(__FILE__));
+define('GGT_SINAPPSUS_API_URL', 'https://ggt-api.sinappsus.us/api');
 
 // Plugin update checker
-require_once __DIR__ . '/plugin-update/plugin-update-checker.php';
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/plugin-update/plugin-update-checker.php';
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 $myUpdateChecker = PucFactory::buildUpdateChecker(
@@ -36,4 +37,4 @@ function ggt_sinappsus_plugin()
 add_action('plugins_loaded', 'ggt_sinappsus_plugin', 0);
 
 // Load The Go Geothermal Admin UI
-require_once __DIR__ . '/admin/ui.php';
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/ui.php';
