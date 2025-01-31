@@ -9,6 +9,12 @@ class Sinappsus_GGT_Admin_UI
     public function __construct()
     {
         add_action('admin_menu', [$this, 'register_admin_menu']);
+        add_filter('plugin_action_links_' . plugin_basename(__FILE__), [$this, 'sinappsus_ggt_wp_plugin']);
+    }
+
+    public function register_admin_menu()
+    {
+        // Register admin menu here
     }
 
     public function sinappsus_ggt_wp_plugin($links)
@@ -30,7 +36,6 @@ class Sinappsus_GGT_Admin_UI
     
         return array_merge($plugin_links, $links);
     }
-
-    add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'sinappsus_ggt_wp_plugin');
-    
 }
+
+new Sinappsus_GGT_Admin_UI();

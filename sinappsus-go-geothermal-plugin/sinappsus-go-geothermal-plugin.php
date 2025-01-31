@@ -1,4 +1,3 @@
-
 <?php
 /*
  * Plugin Name: Sinappsus GoGeothermal Official Plugin
@@ -22,21 +21,19 @@ require_once __DIR__ . '/plugin-update/plugin-update-checker.php';
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 $myUpdateChecker = PucFactory::buildUpdateChecker(
-	'https://raw.githubusercontent.com/sinappsus-agency/sas-ena-wp/refs/heads/master/sinappsus-eaglesnest-wordpress-plugin/info.json',  
-	__FILE__, 
-	'ena-sinappsus-plugin'
+    'https://raw.githubusercontent.com/sinappsus-agency/sas-ena-wp/refs/heads/master/wordpress-gogeothermal-plugin/info.json',  
+    __FILE__, 
+    'ena-sinappsus-plugin'
 );
 
 // Check Plugin is activated or activate
 function ggt_sinappsus_plugin()
 {
-	require_once(plugin_basename('includes/sinappsus-ggt-wp-plugin.php'));
-	load_plugin_textdomain('sinappsus-ggt-wp-plugin', false, trailingslashit(dirname(plugin_basename(__FILE__))));
+    require_once(plugin_basename('includes/sinappsus-ggt-wp-plugin.php'));
+    load_plugin_textdomain('sinappsus-ggt-wp-plugin', false, trailingslashit(dirname(plugin_basename(__FILE__))));
 }
 
-add_action('plugins_loaded', 'sinappsus_ggt_wp_plugin', 0);
+add_action('plugins_loaded', 'ggt_sinappsus_plugin', 0);
 
 // Load The Go Geothermal Admin UI
 require_once __DIR__ . '/admin/ui.php';
-
-
