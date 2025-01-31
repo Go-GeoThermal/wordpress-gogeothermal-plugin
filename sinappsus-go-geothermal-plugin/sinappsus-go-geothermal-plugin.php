@@ -21,7 +21,7 @@ require_once __DIR__ . '/plugin-update/plugin-update-checker.php';
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 $myUpdateChecker = PucFactory::buildUpdateChecker(
-    'https://raw.githubusercontent.com/sinappsus-agency/sas-ena-wp/refs/heads/master/wordpress-gogeothermal-plugin/info.json',  
+    'https://raw.githubusercontent.com/Go-GeoThermal/wordpress-gogeothermal-plugin/refs/heads/master/sinappsus-go-geothermal-plugin/info.json',  
     __FILE__, 
     'ena-sinappsus-plugin'
 );
