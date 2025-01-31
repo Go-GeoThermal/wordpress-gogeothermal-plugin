@@ -1,15 +1,35 @@
 
-        <?php
+<?php
 /*
-Plugin Name: WooCommerce Sage 50cloud Integration
-Description: A custom WordPress plugin to integrate WooCommerce with Sage 50cloud via the HyperAccounts REST API.
-Version: 1.0.0
-Author: Your Name
+ * Plugin Name: Sinappsus GoGeothermal Official Plugin
+ * Description: A custom WordPress plugin to integrate WooCommerce with The Go Geothermal API.
+ * Plugin URI: https://gogeothermal.co.uk
+ * Author URI: https://sinappsus.agency
+ * Version: 0.0.5
+ * Author: Sinappsus
+ * Requires at least: 5.0
+ * Tested up to: 6.0
 */
 
-if (!defined('ABSPATH')) {
-    exit; // Exit if accessed directly
-}
+defined('ABSPATH') || exit;
+
+define('GGT_SINAPPSUS_PLUGIN_VERSION', '0.0.5');
+define('GGT_SINAPPSUS_PLUGIN_URL', untrailingslashit(plugins_url(basename(plugin_dir_path(__FILE__)), basename(__FILE__))));
+define('GGT_SINAPPSUS_PLUGIN_PATH', untrailingslashit(plugin_dir_path(__FILE__)));
+
+// Plugin update checker
+require_once __DIR__ . '/plugin-update/plugin-update-checker.php';
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+
+$myUpdateChecker = PucFactory::buildUpdateChecker(
+	'https://raw.githubusercontent.com/sinappsus-agency/sas-ena-wp/refs/heads/master/sinappsus-eaglesnest-wordpress-plugin/info.json',  // The URL of the metadata file.
+	__FILE__, // Full path to the main plugin file.
+	'ena-sinappsus-plugin'  // Plugin slug. Usually it's the same as the name of the directory.
+);
+
+
+
+require('const.php');
 
 class WooCommerceSageIntegration
 {
@@ -37,30 +57,7 @@ class WooCommerceSageIntegration
         // Actions to take on plugin activation
     }
 
-    public function register_admin_menu()
-    {
-        add_menu_page(
-            'Sage Integration Admin',
-            'Sage Integration',
-            'manage_options',
-            'sage-integration',
-            [$this, 'admin_menu_page'],
-            'dashicons-admin-settings',
-            90
-        );
-    }
 
-    public function admin_menu_page()
-    {
-        // Display the admin page with options to override and approve users/orders
-        echo '<div class="wrap"><h1>Sage Integration Admin</h1>';
-        $this->display_users_section();
-        $this->display_products_section();
-        $this->display_quotes_section();
-        $this->display_company_settings_section();
-        $this->display_exchange_rates_section();
-        echo '</div>';
-    }
 
     private function display_users_section()
     {

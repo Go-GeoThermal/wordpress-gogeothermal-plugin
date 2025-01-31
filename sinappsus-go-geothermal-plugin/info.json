@@ -1,0 +1,16 @@
+{
+    "name" : "Sinappsus GoGeothermal Official Plugin",
+    "slug" : "sinappsus-go-geothermal-plugin",
+    "version" : "0.0.5",
+    "author"  : "Sinappsus",
+    "author_uri" : "https://sinappsus.agency",
+    "download_url" : "https://github.com/Go-GeoThermal/wordpress-gogeothermal-plugin/raw/master/sinappsus-go-geothermal-plugin.zip",
+    "sections" : {
+        "description" : "A custom WordPress plugin to integrate WooCommerce with The Go Geothermal API.",
+        "changelog": "0.0.5 Init"
+    },
+    "banners":{
+        "low" : "https://storage.sinappsus.us/gogeothermal/banner-772x250.png",
+        "high" : "https://storage.sinappsus.us/gogeothermal/banner-772x250.png"
+    }
+}
