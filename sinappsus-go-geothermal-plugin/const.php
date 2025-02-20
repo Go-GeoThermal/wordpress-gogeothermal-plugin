@@ -4,9 +4,9 @@ if (!defined('ABSPATH')) {
 }
 $environments = array();
 $environments["sandbox"]     =    array(
-    "api_url"    =>    "https://ggt-api.sinappsus.us/api",
+    "api_url"    =>    "https://api.gogeothermal.co.uk/api",
 );
 
 $environments["production"] =    array(
-    "api_url"    =>    "https://ggt-api.sinappsus.us/api",
+    "api_url"    =>    "https://api.gogeothermal.co.uk/api",
 );
