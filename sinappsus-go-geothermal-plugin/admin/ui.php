@@ -421,6 +421,25 @@ function sync_user() {
         update_user_meta($user_id, $key, $value);
     }
 
+     // Update WooCommerce billing and shipping address fields
+     update_user_meta($user_id, 'billing_address_1', sanitize_text_field($user_data['address1']));
+     update_user_meta($user_id, 'billing_address_2', sanitize_text_field($user_data['address2']));
+     update_user_meta($user_id, 'billing_city', sanitize_text_field($user_data['address3']));
+     update_user_meta($user_id, 'billing_state', sanitize_text_field($user_data['address4']));
+     update_user_meta($user_id, 'billing_postcode', sanitize_text_field($user_data['address5']));
+     update_user_meta($user_id, 'billing_country', sanitize_text_field($user_data['countryCode']));
+     update_user_meta($user_id, 'billing_phone', sanitize_text_field($user_data['telephone']));
+     update_user_meta($user_id, 'billing_email', sanitize_text_field($user_data['email']));
+ 
+     update_user_meta($user_id, 'shipping_address_1', sanitize_text_field($user_data['deliveryAddress1']));
+     update_user_meta($user_id, 'shipping_address_2', sanitize_text_field($user_data['deliveryAddress2']));
+     update_user_meta($user_id, 'shipping_city', sanitize_text_field($user_data['deliveryAddress3']));
+     update_user_meta($user_id, 'shipping_state', sanitize_text_field($user_data['deliveryAddress4']));
+     update_user_meta($user_id, 'shipping_postcode', sanitize_text_field($user_data['deliveryAddress5']));
+     update_user_meta($user_id, 'shipping_country', sanitize_text_field($user_data['countryCode']));
+     update_user_meta($user_id, 'shipping_phone', sanitize_text_field($user_data['telephone']));
+ 
+
     wp_send_json_success();
 }
 
@@ -902,10 +921,28 @@ function save_custom_registration_fields($user_id)
         }
     }
 
+      // Update WooCommerce billing and shipping address fields
+      update_user_meta($user_id, 'billing_address_1', sanitize_text_field($_POST['address1']));
+      update_user_meta($user_id, 'billing_address_2', sanitize_text_field($_POST['address2']));
+      update_user_meta($user_id, 'billing_city', sanitize_text_field($_POST['address3']));
+      update_user_meta($user_id, 'billing_state', sanitize_text_field($_POST['address4']));
+      update_user_meta($user_id, 'billing_postcode', sanitize_text_field($_POST['address5']));
+      update_user_meta($user_id, 'billing_country', sanitize_text_field($_POST['countryCode']));
+      update_user_meta($user_id, 'billing_phone', sanitize_text_field($_POST['telephone']));
+      update_user_meta($user_id, 'billing_email', sanitize_text_field($_POST['email']));
+  
+      update_user_meta($user_id, 'shipping_address_1', sanitize_text_field($_POST['address1']));
+      update_user_meta($user_id, 'shipping_address_2', sanitize_text_field($_POST['address2']));
+      update_user_meta($user_id, 'shipping_city', sanitize_text_field($_POST['address3']));
+      update_user_meta($user_id, 'shipping_state', sanitize_text_field($_POST['address4']));
+      update_user_meta($user_id, 'shipping_postcode', sanitize_text_field($_POST['deliveryAddress5']));
+      update_user_meta($user_id, 'shipping_country', sanitize_text_field($_POST['countryCode']));
+      update_user_meta($user_id, 'shipping_phone', sanitize_text_field($_POST['telephone']));
+
     // Send user data to the API
-    wp_remote_post('https://your-api-url/customers', [
+    wp_remote_post('https://api.gogeothermal.co.uk/api/customers', [
         'headers' => [
-            'Authorization' => 'Bearer ' . get_option('your_jwt_token_option'),
+            'Authorization' => 'Bearer ' . get_option('sinappsus_gogeo_codex'),
             'Content-Type' => 'application/json'
         ],
         'body' => json_encode($user_data)
