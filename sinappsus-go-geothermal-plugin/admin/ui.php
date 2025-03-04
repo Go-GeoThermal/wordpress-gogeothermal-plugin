@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
 // Include the const.php file to get the environments array
 require_once __DIR__ . '/../const.php';
 ini_set('max_execution_time', 0);
- ini_set('memory_limit', '3048M');
+ini_set('memory_limit', '3048M');
 
 class Sinappsus_GGT_Admin_UI
 {
@@ -37,10 +37,12 @@ class Sinappsus_GGT_Admin_UI
 
     public function display_settings_page()
     {
+
+        $token_exists = get_token() ? true : false;
 ?>
         <div class="wrap">
             <h1>Go Geothermal Settings</h1>
-            <form method="post" action="options.php">
+            <form method="post" action="options.php" style="display: <?php echo $token_exists ? 'none' : 'block'; ?>">
                 <?php
                 settings_fields('ggt_sinappsus_settings_group');
                 do_settings_sections('ggt_sinappsus_settings_group');
@@ -64,188 +66,369 @@ class Sinappsus_GGT_Admin_UI
                 <p id="timer"></p>
                 <p id="message"></p>
             </form>
-            <div id="additional-actions" style="display: none;">
-                <button type="button" id="clear-products-button" class="button button-secondary">Clear All Products</button>
-                <button type="button" id="sync-products-button" class="button button-secondary">Sync All Products</button>
+            <div id="additional-actions" style="display: <?php echo $token_exists ? 'block' : 'none'; ?>">
+                <h2>Product Actions</h2>
+                <div class="action-item">
+                    <button type="button" id="clear-products-button" class="button button-secondary">Clear All Products</button>
+                    <p class="description">This will remove all products from the database.</p>
+                </div>
+                <div class="action-item">
+                    <button type="button" id="sync-products-button" class="button button-secondary">Sync All Products</button>
+                    <p class="description">This will synchronize all products with the Sage system.</p>
+                </div>
             </div>
-            <div id="user-actions" >
-                <button type="button" id="sync-users-button" class="button button-secondary">Sync All Users</button>
-                <button type="button" id="delete-users-button" class="button button-secondary">Delete All Users</button>
+            <div id="user-actions" style="display: <?php echo $token_exists ? 'block' : 'none'; ?>">
+                <h2>User Actions</h2>
+                <div class="action-item">
+                    <button type="button" id="sync-users-button" class="button button-secondary">Sync All Users</button>
+                    <p class="description">This will synchronize all users with the Sage system.</p>
+                </div>
+                <div class="action-item">
+                    <button type="button" id="delete-users-button" class="button button-secondary">Delete All Users</button>
+                    <p class="description">This will remove all users from the database.</p>
+                </div>
+                <div class="action-item">
+                    <button type="button" id="reset-token-button" class="button">Reset Token</button>
+                    <p class="description">This will reset the current token and show the login form again.</p>
+                </div>
+
+            </div>
+
+            <div class="action-item" style="display: <?php echo $token_exists ? 'block' : 'none'; ?>">
+                <h3>Registration Fields</h3>
+                <form method="post" action="options.php">
+                    <?php
+                    settings_fields('ggt_sinappsus_settings_group');
+                    do_settings_sections('ggt_sinappsus_settings_group');
+                    ?>
+                    <label for="ggt_enable_additional_registration_fields">
+                        <input type="checkbox" id="ggt_enable_additional_registration_fields" name="ggt_enable_additional_registration_fields" value="1" <?php checked(1, get_option('ggt_enable_additional_registration_fields'), true); ?> />
+                        Enable Additional Registration Fields
+                    </label>
+                    <p class="description">Enable or disable additional fields on the registration form.</p>
+                    <?php submit_button(); ?>
+                </form>
             </div>
 
         </div>
         <script type="text/javascript">
-           document.addEventListener('DOMContentLoaded', function() {
-    function getToken() {
-        return new Promise((resolve, reject) => {
-            jQuery.post(ajaxurl, {
-                action: 'get_token'
-            }, function(response) {
-                if (response.success) {
-                    resolve(response.data.token);
-                } else {
-                    reject('Token not found');
-                }
-            });
-        });
-    }
-
-    document.getElementById('authenticate-button').addEventListener('click', function() {
-        var email = document.querySelector('input[name="ggt_sinappsus_email"]').value;
-        var password = document.querySelector('input[name="ggt_sinappsus_password"]').value;
-
-        fetch('<?php echo $this->api_url; ?>/login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ email: email, password: password })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.access_token) {
-                // Store the token in the options database
-                jQuery.post(ajaxurl, {
-                    action: 'store_token',
-                    token: data.access_token
-                }, function(response) {
-                    if (response.success) {
-                        document.getElementById('message').innerText = 'Authentication successful!';
-                        document.getElementById('additional-actions').style.display = 'block';
-                        document.getElementById('user-actions').style.display = 'block';
-                    } else {
-                        document.getElementById('message').innerText = 'Failed to store token!';
-                    }
-                });
-            } else {
-                document.getElementById('message').innerText = 'Authentication failed!';
-            }
-        })
-        .catch(error => {
-            document.getElementById('message').innerText = 'An error occurred: ' + error.message;
-        });
-    });
-
-    document.getElementById('validate-button').addEventListener('click', function() {
-        getToken().then(token => {
-            fetch('<?php echo $this->api_url; ?>/validate-token', {
-                method: 'GET',
-                headers: {
-                    'Authorization': 'Bearer ' + token
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.expires_in) {
-                    document.getElementById('message').innerText = 'Token is valid! Expires in: ' + data.expires_in + ' seconds';
-                } else {
-                    document.getElementById('message').innerText = 'Token is invalid!';
-                }
-            })
-            .catch(error => {
-                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
-            });
-        }).catch(error => {
-            document.getElementById('message').innerText = 'An error occurred: ' + error;
-        });
-    });
-
-    document.getElementById('renew-button').addEventListener('click', function() {
-        getToken().then(token => {
-            fetch('<?php echo $this->api_url; ?>/renew-token', {
-                method: 'POST',
-                headers: {
-                    'Authorization': 'Bearer ' + token
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.token) {
-                    // Store the new token in the options database
-                    jQuery.post(ajaxurl, {
-                        action: 'store_token',
-                        token: data.token
-                    }, function(response) {
-                        if (response.success) {
-                            document.getElementById('message').innerText = 'Token renewed successfully!';
-                        } else {
-                            document.getElementById('message').innerText = 'Failed to store renewed token!';
-                        }
+            document.addEventListener('DOMContentLoaded', function() {
+                function getToken() {
+                    return new Promise((resolve, reject) => {
+                        jQuery.post(ajaxurl, {
+                            action: 'get_token'
+                        }, function(response) {
+                            if (response.success) {
+                                resolve(response.data.token);
+                            } else {
+                                reject('Token not found');
+                            }
+                        });
                     });
-                } else {
-                    document.getElementById('message').innerText = 'Failed to renew token!';
                 }
-            })
-            .catch(error => {
-                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
-            });
-        }).catch(error => {
-            document.getElementById('message').innerText = 'An error occurred: ' + error;
-        });
-    });
 
-    document.getElementById('sync-users-button').addEventListener('click', function() {
-        getToken().then(token => {
-            fetch('<?php echo $this->api_url; ?>/customers', {
-                method: 'GET',
-                headers: {
-                    'Authorization': 'Bearer ' + token,
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data && Array.isArray(data)) {
-                    data.forEach(user_data => {
-                        if (user_data.email) {
-                            jQuery.post(ajaxurl, {
-                                action: 'sync_user',
-                                user_data: user_data
-                            }, function(response) {
-                                if (!response.success) {
-                                    document.getElementById('message').innerText = 'Failed to sync user: ' + user_data.email;
+                document.getElementById('authenticate-button').addEventListener('click', function() {
+                    var email = document.querySelector('input[name="ggt_sinappsus_email"]').value;
+                    var password = document.querySelector('input[name="ggt_sinappsus_password"]').value;
+
+                    fetch('<?php echo $this->api_url; ?>/login', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                email: email,
+                                password: password
+                            })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.access_token) {
+                                // Store the token in the options database
+                                jQuery.post(ajaxurl, {
+                                    action: 'store_token',
+                                    token: data.access_token
+                                }, function(response) {
+                                    if (response.success) {
+                                        document.getElementById('message').innerText = 'Authentication successful!';
+                                        document.getElementById('additional-actions').style.display = 'block';
+                                        document.getElementById('user-actions').style.display = 'block';
+                                    } else {
+                                        document.getElementById('message').innerText = 'Failed to store token!';
+                                    }
+                                });
+                            } else {
+                                document.getElementById('message').innerText = 'Authentication failed!';
+                            }
+                        })
+                        .catch(error => {
+                            document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                        });
+                });
+
+                document.getElementById('validate-button').addEventListener('click', function() {
+                    getToken().then(token => {
+                        fetch('<?php echo $this->api_url; ?>/validate-token', {
+                                method: 'GET',
+                                headers: {
+                                    'Authorization': 'Bearer ' + token
                                 }
-                            }).fail(function(error) {
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.expires_in) {
+                                    document.getElementById('message').innerText = 'Token is valid! Expires in: ' + data.expires_in + ' seconds';
+                                } else {
+                                    document.getElementById('message').innerText = 'Token is invalid!';
+                                }
+                            })
+                            .catch(error => {
                                 document.getElementById('message').innerText = 'An error occurred: ' + error.message;
                             });
-                        }
+                    }).catch(error => {
+                        document.getElementById('message').innerText = 'An error occurred: ' + error;
                     });
-                    document.getElementById('message').innerText = 'Users synchronized successfully!';
-                } else {
-                    document.getElementById('message').innerText = 'Invalid response from API.';
-                }
-            })
-            .catch(error => {
-                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
-            });
-        }).catch(error => {
-            document.getElementById('message').innerText = 'An error occurred: ' + error;
-        });
-    });
+                });
 
-    document.getElementById('delete-users-button').addEventListener('click', function() {
-        if (confirm('Are you sure you want to delete all users?')) {
-            fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                },
-                body: 'action=delete_all_users'
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    document.getElementById('message').innerText = 'All users deleted successfully!';
-                } else {
-                    document.getElementById('message').innerText = 'Failed to delete users!';
-                }
-            })
-            .catch(error => {
-                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                document.getElementById('renew-button').addEventListener('click', function() {
+                    getToken().then(token => {
+                        fetch('<?php echo $this->api_url; ?>/renew-token', {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': 'Bearer ' + token
+                                }
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.token) {
+                                    // Store the new token in the options database
+                                    jQuery.post(ajaxurl, {
+                                        action: 'store_token',
+                                        token: data.token
+                                    }, function(response) {
+                                        if (response.success) {
+                                            document.getElementById('message').innerText = 'Token renewed successfully!';
+                                        } else {
+                                            document.getElementById('message').innerText = 'Failed to store renewed token!';
+                                        }
+                                    });
+                                } else {
+                                    document.getElementById('message').innerText = 'Failed to renew token!';
+                                }
+                            })
+                            .catch(error => {
+                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                            });
+                    }).catch(error => {
+                        document.getElementById('message').innerText = 'An error occurred: ' + error;
+                    });
+                });
+
+                document.getElementById('sync-users-button').addEventListener('click', function() {
+                    getToken().then(token => {
+                        fetch('<?php echo $this->api_url; ?>/customers', {
+                                method: 'GET',
+                                headers: {
+                                    'Authorization': 'Bearer ' + token,
+                                    'Content-Type': 'application/json'
+                                }
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data && Array.isArray(data)) {
+                                    data.forEach(user_data => {
+                                        if (user_data.email) {
+                                            jQuery.post(ajaxurl, {
+                                                action: 'sync_user',
+                                                user_data: user_data
+                                            }, function(response) {
+                                                if (!response.success) {
+                                                    document.getElementById('message').innerText = 'Failed to sync user: ' + user_data.email;
+                                                }
+                                            }).fail(function(error) {
+                                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                                            });
+                                        }
+                                    });
+                                    document.getElementById('message').innerText = 'Users synchronized successfully!';
+                                } else {
+                                    document.getElementById('message').innerText = 'Invalid response from API.';
+                                }
+                            })
+                            .catch(error => {
+                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                            });
+                    }).catch(error => {
+                        document.getElementById('message').innerText = 'An error occurred: ' + error;
+                    });
+                });
+
+                document.getElementById('delete-users-button').addEventListener('click', function() {
+                    if (confirm('Are you sure you want to delete all users?')) {
+                        fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded'
+                                },
+                                body: 'action=delete_all_users'
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    document.getElementById('message').innerText = 'All users deleted successfully!';
+                                } else {
+                                    document.getElementById('message').innerText = 'Failed to delete users!';
+                                }
+                            })
+                            .catch(error => {
+                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                            });
+                    }
+                });
+
+                document.getElementById('clear-products-button').addEventListener('click', function() {
+                    if (confirm('Are you sure you want to delete all products?')) {
+                        fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded'
+                                },
+                                body: 'action=clear_all_products'
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    document.getElementById('message').innerText = 'All products deleted successfully!';
+                                } else {
+                                    document.getElementById('message').innerText = 'Failed to delete products!';
+                                }
+                            })
+                            .catch(error => {
+                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                            });
+                    }
+                });
+
+                document.getElementById('sync-products-button').addEventListener('click', function() {
+                    document.getElementById('message').innerText = 'Synchronizing products... This may take a while.';
+
+                    getToken().then(token => {
+                        fetch('<?php echo $this->api_url; ?>/products', {
+                                method: 'GET',
+                                headers: {
+                                    'Authorization': 'Bearer ' + token,
+                                    'Content-Type': 'application/json'
+                                }
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data && Array.isArray(data)) {
+                                    // First, get all existing products
+                                    jQuery.post(ajaxurl, {
+                                        action: 'get_all_products'
+                                    }).done(function(existingProducts) {
+                                        let existing = {};
+                                        if (existingProducts.success && Array.isArray(existingProducts.data)) {
+                                            // Create a lookup map for faster checking - map stockCode to product ID
+                                            existingProducts.data.forEach(product => {
+                                                existing[product.stockCode] = product.id;
+                                            });
+                                        }
+
+                                        let processed = 0;
+                                        let total = data.length;
+                                        document.getElementById('message').innerText = 'Processing ' + total + ' products...';
+
+                                        // Process each product sequentially to avoid overwhelming the server
+                                        function processNextProduct(index) {
+                                            if (index >= data.length) {
+                                                document.getElementById('message').innerText = 'Products synchronized successfully! Processed: ' + processed + ' of ' + total;
+                                                return;
+                                            }
+
+                                            let product_data = data[index];
+                                            if (!product_data.stockCode) {
+                                                processNextProduct(index + 1);
+                                                return;
+                                            }
+
+                                            if (existing[product_data.stockCode]) {
+                                                // Update existing product
+                                                jQuery.post(ajaxurl, {
+                                                    action: 'update_product',
+                                                    product_id: existing[product_data.stockCode],
+                                                    product_data: product_data
+                                                }).always(function() {
+                                                    processed++;
+                                                    document.getElementById('message').innerText = 'Processing: ' + processed + ' of ' + total;
+                                                    processNextProduct(index + 1);
+                                                });
+                                            } else if (product_data.inactiveFlag !== true && product_data.inactiveFlag !== "1") {
+                                                // Only create new product if inactiveFlag is not true or "1"
+                                                jQuery.post(ajaxurl, {
+                                                    action: 'create_product',
+                                                    product_data: product_data
+                                                }).always(function() {
+                                                    processed++;
+                                                    document.getElementById('message').innerText = 'Processing: ' + processed + ' of ' + total;
+                                                    processNextProduct(index + 1);
+                                                });
+                                            } else {
+                                                // Skip this product
+                                                processed++;
+                                                document.getElementById('message').innerText = 'Processing: ' + processed + ' of ' + total + ' (skipped inactive product)';
+                                                processNextProduct(index + 1);
+                                            }
+                                        }
+
+                                        // Start processing products
+                                        processNextProduct(0);
+                                    }).fail(function(error) {
+                                        document.getElementById('message').innerText = 'Failed to get existing products: ' + error.message;
+                                    });
+                                } else {
+                                    document.getElementById('message').innerText = 'Invalid response from API.';
+                                }
+                            })
+                            .catch(error => {
+                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                            });
+                    }).catch(error => {
+                        document.getElementById('message').innerText = 'An error occurred: ' + error;
+                    });
+                });
+
+                // Add this in the document.addEventListener('DOMContentLoaded') function
+                document.getElementById('reset-token-button').addEventListener('click', function() {
+                    if (confirm('Are you sure you want to reset the token? You will need to authenticate again.')) {
+                        fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded'
+                                },
+                                body: 'action=reset_token'
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    document.getElementById('message').innerText = 'Token reset successfully!';
+                                    // Hide action sections and show login form
+                                    document.getElementById('additional-actions').style.display = 'none';
+                                    document.getElementById('user-actions').style.display = 'none';
+                                    document.querySelector('form').style.display = 'block';
+                                    document.querySelector('.action-item[style*="block"]').style.display = 'none';
+                                } else {
+                                    document.getElementById('message').innerText = 'Failed to reset token!';
+                                }
+                            })
+                            .catch(error => {
+                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                            });
+                    }
+                });
+
+
             });
-        }
-    });
-});
         </script>
 <?php
     }
@@ -277,6 +460,7 @@ function ggt_sinappsus_register_settings()
 {
     register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_email');
     register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_password');
+    register_setting('ggt_sinappsus_settings_group', 'ggt_enable_additional_registration_fields');
 }
 
 add_action('wp_ajax_clear_all_products', 'clear_all_products');
@@ -285,6 +469,17 @@ add_action('wp_ajax_update_product', 'update_product');
 add_action('wp_ajax_create_product', 'create_product');
 add_action('wp_ajax_sync_user', 'sync_user');
 add_action('wp_ajax_delete_all_users', 'delete_all_users');
+add_action('wp_ajax_reset_token', 'reset_token');
+
+function reset_token()
+{
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized', 401);
+    }
+
+    delete_option('sinappsus_gogeo_codex');
+    wp_send_json_success();
+}
 
 function clear_all_products()
 {
@@ -299,12 +494,30 @@ function clear_all_products()
     );
 
     $products = get_posts($args);
+    $count = count($products);
 
-    foreach ($products as $product) {
-        wp_delete_post($product->ID, true);
+    if ($count === 0) {
+        wp_send_json_success(['message' => 'No products found to delete']);
+        return;
     }
 
-    wp_send_json_success();
+    $deleted = 0;
+    $errors = [];
+
+    foreach ($products as $product) {
+        $result = wp_delete_post($product->ID, true);
+        if ($result) {
+            $deleted++;
+        } else {
+            $errors[] = "Failed to delete product ID: {$product->ID}";
+        }
+    }
+
+    wp_send_json_success([
+        'deleted' => $deleted,
+        'total' => $count,
+        'errors' => $errors
+    ]);
 }
 
 function get_all_products()
@@ -316,8 +529,7 @@ function get_all_products()
     $args = array(
         'post_type' => 'product',
         'posts_per_page' => -1,
-        'post_status' => 'any',
-        'meta_key' => '_stockCode'
+        'post_status' => 'any'
     );
 
     $products = get_posts($args);
@@ -325,10 +537,15 @@ function get_all_products()
 
     foreach ($products as $product) {
         $product_obj = wc_get_product($product->ID);
-        $result[] = array(
-            'id' => $product->ID,
-            'stockCode' => $product_obj->get_meta('_stockCode')
-        );
+        $stock_code = $product_obj->get_meta('_stockCode');
+
+        // Only include products that have a stockCode
+        if ($stock_code) {
+            $result[] = array(
+                'id' => $product->ID,
+                'stockCode' => $stock_code
+            );
+        }
     }
 
     wp_send_json_success($result);
@@ -396,7 +613,8 @@ function create_product()
     wp_send_json_success();
 }
 
-function sync_user() {
+function sync_user()
+{
     if (!current_user_can('manage_options')) {
         wp_send_json_error('Unauthorized', 401);
     }
@@ -421,37 +639,70 @@ function sync_user() {
         update_user_meta($user_id, $key, $value);
     }
 
-     // Update WooCommerce billing and shipping address fields
-     update_user_meta($user_id, 'billing_address_1', sanitize_text_field($user_data['address1']));
-     update_user_meta($user_id, 'billing_address_2', sanitize_text_field($user_data['address2']));
-     update_user_meta($user_id, 'billing_city', sanitize_text_field($user_data['address3']));
-     update_user_meta($user_id, 'billing_state', sanitize_text_field($user_data['address4']));
-     update_user_meta($user_id, 'billing_postcode', sanitize_text_field($user_data['address5']));
-     update_user_meta($user_id, 'billing_country', sanitize_text_field($user_data['countryCode']));
-     update_user_meta($user_id, 'billing_phone', sanitize_text_field($user_data['telephone']));
-     update_user_meta($user_id, 'billing_email', sanitize_text_field($user_data['email']));
- 
-     update_user_meta($user_id, 'shipping_address_1', sanitize_text_field($user_data['deliveryAddress1']));
-     update_user_meta($user_id, 'shipping_address_2', sanitize_text_field($user_data['deliveryAddress2']));
-     update_user_meta($user_id, 'shipping_city', sanitize_text_field($user_data['deliveryAddress3']));
-     update_user_meta($user_id, 'shipping_state', sanitize_text_field($user_data['deliveryAddress4']));
-     update_user_meta($user_id, 'shipping_postcode', sanitize_text_field($user_data['deliveryAddress5']));
-     update_user_meta($user_id, 'shipping_country', sanitize_text_field($user_data['countryCode']));
-     update_user_meta($user_id, 'shipping_phone', sanitize_text_field($user_data['telephone']));
- 
+    // Update WooCommerce billing and shipping address fields
+    update_user_meta($user_id, 'billing_address_1', sanitize_text_field($user_data['address1']));
+    update_user_meta($user_id, 'billing_address_2', sanitize_text_field($user_data['address2']));
+    update_user_meta($user_id, 'billing_city', sanitize_text_field($user_data['address3']));
+    update_user_meta($user_id, 'billing_state', sanitize_text_field($user_data['address4']));
+    update_user_meta($user_id, 'billing_postcode', sanitize_text_field($user_data['address5']));
+    update_user_meta($user_id, 'billing_country', sanitize_text_field($user_data['countryCode']));
+    update_user_meta($user_id, 'billing_phone', sanitize_text_field($user_data['telephone']));
+    update_user_meta($user_id, 'billing_email', sanitize_text_field($user_data['email']));
+
+    update_user_meta($user_id, 'shipping_address_1', sanitize_text_field($user_data['deliveryAddress1']));
+    update_user_meta($user_id, 'shipping_address_2', sanitize_text_field($user_data['deliveryAddress2']));
+    update_user_meta($user_id, 'shipping_city', sanitize_text_field($user_data['deliveryAddress3']));
+    update_user_meta($user_id, 'shipping_state', sanitize_text_field($user_data['deliveryAddress4']));
+    update_user_meta($user_id, 'shipping_postcode', sanitize_text_field($user_data['deliveryAddress5']));
+    update_user_meta($user_id, 'shipping_country', sanitize_text_field($user_data['countryCode']));
+    update_user_meta($user_id, 'shipping_phone', sanitize_text_field($user_data['telephone']));
+
 
     wp_send_json_success();
 }
 
 function delete_all_users()
 {
-    $users = get_users();
-
-    foreach ($users as $user) {
-        wp_delete_user($user->ID);
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized', 401);
     }
 
-    wp_send_json_success();
+    // Get all users with role 'subscriber' or 'customer'
+    $args = array(
+        'role__in' => array('subscriber', 'customer'),
+        'fields' => 'ID'
+    );
+
+    $users = get_users($args);
+    $count = count($users);
+
+    if ($count === 0) {
+        wp_send_json_success(['message' => 'No users found to delete']);
+        return;
+    }
+
+    $deleted = 0;
+    $errors = [];
+
+    foreach ($users as $user_id) {
+        // Skip admin users as a safeguard
+        if (user_can($user_id, 'manage_options')) {
+            continue;
+        }
+
+        $result = wp_delete_user($user_id);
+        if ($result) {
+            $deleted++;
+        } else {
+            $errors[] = "Failed to delete user ID: $user_id";
+        }
+    }
+
+    wp_send_json_success([
+        'deleted' => $deleted,
+        'total' => $count,
+        'errors' => $errors
+    ]);
 }
 
 new Sinappsus_GGT_Admin_UI();
@@ -867,28 +1118,30 @@ add_action('register_form', 'add_custom_registration_fields');
 
 function add_custom_registration_fields()
 {
+    if (!get_option('ggt_enable_additional_registration_fields')) {
+        return;
+    }
+
     $custom_fields = [
-        'accountRef',
-        'name',
-        'address1',
-        'address2',
-        'address3',
-        'address4',
-        'address5',
-        'countryCode',
-        'contactName',
-        'telephone',
-        'email2',
-        'eoriNumber',
-        'www',
-        'telephone2',
+        'accountRef' => 'Account Reference',
+        'name' => 'Name',
+        'address1' => 'Address 1',
+        'address2' => 'Address 2',
+        'address3' => 'Address 3',
+        'address4' => 'Address 4',
+        'address5' => 'Address 5',
+        'countryCode' => 'Country Code',
+        'contactName' => 'Contact Name',
+        'telephone' => 'Telephone',
+        'email2' => 'Email 2',
+        'eoriNumber' => 'EORI Number',
+        'www' => 'Website',
+        'telephone2' => 'Telephone 2',
     ];
 
+
     foreach ($custom_fields as $key => $label) {
-        echo '<p>';
-        echo '<label for="' . $key . '">' . $label . '<br />';
-        echo '<input type="text" name="' . $key . '" id="' . $key . '" class="input" value="' . esc_attr(wp_unslash($_POST[$key] ?? '')) . '" size="25" /></label>';
-        echo '</p>';
+        echo '<p><label for="' . $key . '">' . $label . '</label><br><input type="text" name="' . $key . '" id="' . $key . '" class="input" value="' . esc_attr(wp_unslash($_POST[$key] ?? '')) . '" size="25" /></p>';
     }
 }
 
@@ -921,23 +1174,23 @@ function save_custom_registration_fields($user_id)
         }
     }
 
-      // Update WooCommerce billing and shipping address fields
-      update_user_meta($user_id, 'billing_address_1', sanitize_text_field($_POST['address1']));
-      update_user_meta($user_id, 'billing_address_2', sanitize_text_field($_POST['address2']));
-      update_user_meta($user_id, 'billing_city', sanitize_text_field($_POST['address3']));
-      update_user_meta($user_id, 'billing_state', sanitize_text_field($_POST['address4']));
-      update_user_meta($user_id, 'billing_postcode', sanitize_text_field($_POST['address5']));
-      update_user_meta($user_id, 'billing_country', sanitize_text_field($_POST['countryCode']));
-      update_user_meta($user_id, 'billing_phone', sanitize_text_field($_POST['telephone']));
-      update_user_meta($user_id, 'billing_email', sanitize_text_field($_POST['email']));
-  
-      update_user_meta($user_id, 'shipping_address_1', sanitize_text_field($_POST['address1']));
-      update_user_meta($user_id, 'shipping_address_2', sanitize_text_field($_POST['address2']));
-      update_user_meta($user_id, 'shipping_city', sanitize_text_field($_POST['address3']));
-      update_user_meta($user_id, 'shipping_state', sanitize_text_field($_POST['address4']));
-      update_user_meta($user_id, 'shipping_postcode', sanitize_text_field($_POST['deliveryAddress5']));
-      update_user_meta($user_id, 'shipping_country', sanitize_text_field($_POST['countryCode']));
-      update_user_meta($user_id, 'shipping_phone', sanitize_text_field($_POST['telephone']));
+    // Update WooCommerce billing and shipping address fields
+    update_user_meta($user_id, 'billing_address_1', sanitize_text_field($_POST['address1']));
+    update_user_meta($user_id, 'billing_address_2', sanitize_text_field($_POST['address2']));
+    update_user_meta($user_id, 'billing_city', sanitize_text_field($_POST['address3']));
+    update_user_meta($user_id, 'billing_state', sanitize_text_field($_POST['address4']));
+    update_user_meta($user_id, 'billing_postcode', sanitize_text_field($_POST['address5']));
+    update_user_meta($user_id, 'billing_country', sanitize_text_field($_POST['countryCode']));
+    update_user_meta($user_id, 'billing_phone', sanitize_text_field($_POST['telephone']));
+    update_user_meta($user_id, 'billing_email', sanitize_text_field($_POST['email']));
+
+    update_user_meta($user_id, 'shipping_address_1', sanitize_text_field($_POST['address1']));
+    update_user_meta($user_id, 'shipping_address_2', sanitize_text_field($_POST['address2']));
+    update_user_meta($user_id, 'shipping_city', sanitize_text_field($_POST['address3']));
+    update_user_meta($user_id, 'shipping_state', sanitize_text_field($_POST['address4']));
+    update_user_meta($user_id, 'shipping_postcode', sanitize_text_field($_POST['address5']));
+    update_user_meta($user_id, 'shipping_country', sanitize_text_field($_POST['countryCode']));
+    update_user_meta($user_id, 'shipping_phone', sanitize_text_field($_POST['telephone']));
 
     // Send user data to the API
     wp_remote_post('https://api.gogeothermal.co.uk/api/customers', [
