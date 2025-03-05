@@ -30,7 +30,7 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         // Check if WC Blocks is active and of a compatible version
         if (class_exists('Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType')) {
             require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/blocks/class-wc-geo-credit-blocks.php';
-            $this->logger->info('WooCommerce Blocks support classes loaded: ' . GGT_SINAPPSUS_PLUGIN_PATH . '/includes/blocks/class-wc-geo-credit-blocks.php');
+            // $this->logger->info('WooCommerce Blocks support classes loaded: ' . GGT_SINAPPSUS_PLUGIN_PATH . '/includes/blocks/class-wc-geo-credit-blocks.php');
         }
     }
 
@@ -64,7 +64,8 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         }
 
         $user_id = get_current_user_id();
-        
+        $cart_total = WC()->cart->total;
+
         // Try different meta keys where credit limit might be stored
         $credit_limit = get_user_meta($user_id, 'CreditLimit', true);
         if (empty($credit_limit)) {
@@ -74,7 +75,7 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             $credit_limit = get_user_meta($user_id, 'credit_limit', true);
         }
 
-        if (empty($credit_limit)) {
+        if (empty($credit_limit) || floatval($credit_limit) < floatval($cart_total)) {
             return false;
         }
 
@@ -106,17 +107,34 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             // Deduct the order total from user's credit
             update_user_meta($user_id, $credit_key, floatval($credit_limit) - floatval($order->get_total()));
 
-            // Mark order as completed
-            $order->payment_complete();
-            $order->update_status('completed', __('Paid using store credit.', 'woocommerce'));
-
             // Send order details to external API
-            $this->send_order_to_api($order);
+            $response = $this->send_order_to_api($order);
 
-            return array(
-                'result'   => 'success',
-                'redirect' => $this->get_return_url($order)
-            );
+            if (is_wp_error($response)) {
+                wc_add_notice(__('Something went wrong. Please contact your account manager.', 'woocommerce'), 'error');
+                return array('result' => 'fail');
+            }
+
+            $response_code = wp_remote_retrieve_response_code($response);
+            $response_body = wp_remote_retrieve_body($response);
+
+            // Log the response for debugging
+            $this->logger->info('API RESPONSE CODE: ' . $response_code);
+            $this->logger->info('API RESPONSE BODY: ' . $response_body);
+
+            if ($response_code == 200) {
+                // Mark order as completed
+                $order->payment_complete();
+                $order->update_status('completed', __('Paid using store credit.', 'woocommerce'));
+
+                return array(
+                    'result'   => 'success',
+                    'redirect' => $this->get_return_url($order)
+                );
+            } else {
+                wc_add_notice(__('Something went wrong. Please contact your account manager.', 'woocommerce'), 'error');
+                return array('result' => 'fail');
+            }
         } else {
             wc_add_notice(__('Insufficient credit balance.', 'woocommerce'), 'error');
             return array('result' => 'fail');
@@ -160,18 +178,19 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             'headers'   => array(
                 'Authorization' => 'Bearer ' . $api_key,
                 'Content-Type'  => 'application/json',
+                'Accept'        => 'application/json',
             ),
             'body'      => json_encode($order_data),
         ));
 
-      
+        // Log the response for debugging
+        $this->logger->info('API RESPONSE: ' . print_r($response, true));
 
-        $this->logger->info('API TOKEN ' . get_option('sinappsus_gogeo_codex'));
-        $this->logger->info('API REQUEST ' . print_r(json_encode($order_data), true));
-        $this->logger->info('API RESPONSE FOR TRANSACTION ON CREDIT ' . print_r($response, true));
+        return $response;
     }
 
-    private function get_token() {
+    private function get_token()
+    {
         $encrypted_token = get_option('sinappsus_gogeo_codex');
         if ($encrypted_token) {
             return openssl_decrypt($encrypted_token, 'aes-256-cbc', AUTH_KEY, 0, AUTH_SALT);

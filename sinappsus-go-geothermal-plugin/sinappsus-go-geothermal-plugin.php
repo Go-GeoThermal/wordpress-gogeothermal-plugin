@@ -36,5 +36,15 @@ function ggt_sinappsus_plugin()
 
 add_action('plugins_loaded', 'ggt_sinappsus_plugin', 0);
 
+// Add settings link on plugin page
+function ggt_sinappsus_plugin_action_links($links)
+{
+    $settings_link = '<a href="admin.php?page=sinappsus-ggt-settings">' . __('Settings', 'sinappsus-ggt-wp-plugin') . '</a>';
+    $payment_link = '<a href="admin.php?page=wc-settings&tab=checkout&section=geo_credit">' . __('Payment Configuration', 'sinappsus-ggt-wp-plugin') . '</a>';
+    array_unshift($links, $settings_link, $payment_link);
+    return $links;
+}
+add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'ggt_sinappsus_plugin_action_links');
+
 // Load The Go Geothermal Admin UI
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/ui.php';
