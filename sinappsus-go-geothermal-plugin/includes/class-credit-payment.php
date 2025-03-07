@@ -86,6 +86,9 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         $order = wc_get_order($order_id);
         $user_id = $order->get_user_id();
 
+        // Get the desired delivery date
+        $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
+
         // Try different meta keys where credit limit might be stored
         $credit_limit = get_user_meta($user_id, 'CreditLimit', true);
         if (empty($credit_limit)) {
@@ -108,7 +111,7 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             update_user_meta($user_id, $credit_key, floatval($credit_limit) - floatval($order->get_total()));
 
             // Send order details to external API
-            $response = $this->send_order_to_api($order);
+            $response = $this->send_order_to_api($order, $delivery_date);
 
             if (is_wp_error($response)) {
                 wc_add_notice(__('Something went wrong. Please contact your account manager.', 'woocommerce'), 'error');
@@ -141,7 +144,7 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         }
     }
 
-    private function send_order_to_api($order) {
+    private function send_order_to_api($order, $delivery_date) {
         $api_key = $this->get_token();
         $endpoint = 'https://api.gogeothermal.co.uk/api/sales-orders/wp-new-order';
 
@@ -157,6 +160,7 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             'shipping'    => $order->get_address('shipping'),
             'user_meta'   => $user_meta, // Include user meta data
             'items'       => array(),
+            'delivery_date' => $delivery_date, // Include the delivery date
         );
 
         foreach ($order->get_items() as $item_id => $item) {

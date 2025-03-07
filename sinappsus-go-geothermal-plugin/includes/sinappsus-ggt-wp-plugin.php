@@ -36,13 +36,5 @@ add_action('woocommerce_blocks_loaded', function() {
 });
 
 
-
-
-// Load payment gateway
-function ggt_load_credit_gateway() {
-    if (class_exists('WC_Payment_Gateway')) {
-        wc_get_logger()->info('Loading credit payment gateway', ['source' => 'geo-credit']);
-        require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-credit-payment.php';
-    }
-}
-add_action('plugins_loaded', 'ggt_load_credit_gateway', 11);
+// Include woocommerce customization for delivery date and auto passing additional payment methods
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/sage/class-woocommerce-customization.php';
