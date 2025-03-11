@@ -10,8 +10,8 @@ class GGT_Checkout_Enhancements {
     public function __construct() {
         $this->logger = wc_get_logger();
         
-        // Enqueue scripts for checkout
-        add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
+        // Enqueue scripts for checkout with higher priority to ensure it loads early
+        add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'), 20);
         
         // Register AJAX handlers
         add_action('wp_ajax_ggt_fetch_customer_pricing', array($this, 'ajax_fetch_customer_pricing'));
@@ -29,54 +29,51 @@ class GGT_Checkout_Enhancements {
     
     public function enqueue_scripts() {
         if (is_checkout()) {
+            // Make sure jQuery and jQuery UI are loaded with specified versions
+            wp_enqueue_script('jquery');
+            wp_enqueue_script('jquery-ui-core');
+            wp_enqueue_script('jquery-ui-datepicker');
+            
+            // jQuery UI styling - make sure it loads with a proper handle
+            wp_enqueue_style(
+                'jquery-ui-for-ggt',  // Changed handle to avoid conflicts
+                '//code.jquery.com/ui/1.13.2/themes/smoothness/jquery-ui.css',
+                array(),
+                '1.13.2'
+            );
+            
+            // Deregister delivery date picker if it exists to prevent conflicts
+            if (wp_script_is('ggt-delivery-date-picker', 'registered')) {
+                wp_deregister_script('ggt-delivery-date-picker');
+            }
+            
+            // Add version timestamp to bust cache
+            $js_version = filemtime(dirname(__FILE__, 2) . '/assets/js/checkout-enhancements.js');
+            $css_version = filemtime(dirname(__FILE__, 2) . '/assets/css/checkout-enhancements.css');
+            
+            // Load our custom checkout enhancements script with proper dependencies
             wp_enqueue_script(
                 'ggt-checkout-enhancements',
                 plugins_url('sinappsus-go-geothermal-plugin/assets/js/checkout-enhancements.js', dirname(__FILE__, 2)),
-                array('jquery'),
-                '1.0.0',
+                array('jquery', 'jquery-ui-datepicker'),
+                $js_version,
                 true
             );
             
-            // Add some custom CSS for the delivery address modal
-            wp_add_inline_style('woocommerce-inline', '
-                #ggt-delivery-addresses-modal {
-                    position: fixed;
-                    z-index: 1000;
-                    left: 0;
-                    top: 0;
-                    width: 100%;
-                    height: 100%;
-                    overflow: auto;
-                    background-color: rgba(0,0,0,0.4);
-                }
-                #ggt-delivery-addresses-modal .modal-content {
-                    background-color: #fefefe;
-                    margin: 15% auto;
-                    padding: 20px;
-                    border: 1px solid #888;
-                    width: 80%;
-                    max-width: 600px;
-                }
-                #ggt-delivery-addresses-modal .close {
-                    color: #aaa;
-                    float: right;
-                    font-size: 28px;
-                    font-weight: bold;
-                    cursor: pointer;
-                }
-                .ggt-address-list {
-                    list-style: none;
-                    padding: 0;
-                    margin: 0;
-                }
-                .ggt-address-item {
-                    padding: 10px;
-                    margin-bottom: 10px;
-                    border: 1px solid #ddd;
-                }
-                .ggt-delivery-address-selector {
-                    margin-bottom: 20px;
-                }
+            // Load the custom CSS
+            wp_enqueue_style(
+                'ggt-checkout-enhancements-css',
+                plugins_url('sinappsus-go-geothermal-plugin/assets/css/checkout-enhancements.css', dirname(__FILE__, 2)),
+                array('jquery-ui-for-ggt'),  // Make sure our CSS loads after jQuery UI CSS
+                $css_version
+            );
+            
+            // Debug jQuery UI availability
+            wp_add_inline_script('ggt-checkout-enhancements', '
+                console.log("jQuery UI Status Check:");
+                console.log("- jQuery version: " + jQuery.fn.jquery);
+                console.log("- jQuery UI Datepicker available: " + (typeof jQuery.fn.datepicker === "function"));
+                console.log("- Datepicker field exists: " + (jQuery("#ggt_delivery_date").length > 0));
             ');
             
             // Get the currently logged-in user's account reference
@@ -88,6 +85,11 @@ class GGT_Checkout_Enhancements {
                     $account_ref = get_user_meta($user_id, 'account_ref', true); // Check alternative key
                 }
             }
+            
+            // Log information for debugging
+            $this->logger->info('Enqueuing checkout enhancements script with account ref: ' . $account_ref, 
+                array('source' => 'ggt-checkout')
+            );
             
             // Localize script with data needed for AJAX calls
             wp_localize_script('ggt-checkout-enhancements', 'ggt_checkout_data', array(

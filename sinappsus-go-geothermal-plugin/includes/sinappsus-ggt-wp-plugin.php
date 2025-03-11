@@ -41,15 +41,24 @@ require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-checkout-enhancements.
 // Include woocommerce customization for delivery date and auto passing additional payment methods
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-woocommerce-customization.php';
 
-// Enqueue checkout enhancement styles
-add_action('wp_enqueue_scripts', 'ggt_enqueue_checkout_styles');
-function ggt_enqueue_checkout_styles() {
-    if (is_checkout()) {
+// Make sure the enhanced checkout CSS is loaded one way or another
+add_action('wp_enqueue_scripts', 'ggt_ensure_checkout_styles', 999);
+function ggt_ensure_checkout_styles() {
+    if (is_checkout() && !wp_style_is('ggt-checkout-enhancements-css', 'enqueued')) {
         wp_enqueue_style(
-            'ggt-checkout-enhancements',
+            'ggt-checkout-enhancements-css',
             plugins_url('sinappsus-go-geothermal-plugin/assets/css/checkout-enhancements.css', dirname(__FILE__, 2)),
             array(),
-            '1.0.0'
+            filemtime(dirname(__FILE__, 2) . '/assets/css/checkout-enhancements.css')
         );
     }
 }
+
+// Don't load the separate delivery date picker script as it's now integrated in checkout-enhancements.js
+// If there's any custom code in delivery-date-picker.js that's not in checkout-enhancements.js,
+// it should be integrated there instead.
+
+// Remove the separate enqueue function as it's now included in the class-checkout-enhancements.php file
+// This prevents duplicate CSS loading
+// do not delete the following line if it exists:
+// add_action('wp_enqueue_scripts', 'ggt_enqueue_checkout_styles');

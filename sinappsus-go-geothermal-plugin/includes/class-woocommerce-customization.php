@@ -1,15 +1,87 @@
 <?php 
 // Add custom field for desired delivery date
-add_action('woocommerce_after_order_notes', 'ggt_add_delivery_date_field');
+add_action('woocommerce_after_order_notes', 'ggt_add_delivery_date_field', 5);
+add_action('woocommerce_before_checkout_billing_form', 'ggt_add_delivery_date_field', 5);
+add_action('woocommerce_before_order_notes', 'ggt_add_delivery_date_field', 5);
+add_action('woocommerce_checkout_before_order_review', 'ggt_add_delivery_date_field', 5);
+add_action('woocommerce_review_order_before_payment', 'ggt_add_delivery_date_field', 5);
+
 function ggt_add_delivery_date_field($checkout) {
-    echo '<div id="ggt_delivery_date_field"><h2>' . __('Desired Delivery Date') . '</h2>';
+    // Prevent duplicate fields if already added
+    if (did_action('ggt_delivery_date_added')) {
+        return;
+    }
+    
+    // Create a more visible section for the delivery date
+    echo '<div id="ggt_delivery_date_field" class="ggt-delivery-date-wrapper">';
+    echo '<h3>' . __('Desired Delivery Date') . '</h3>';
+    
+    // Add description for delivery date restrictions
+    echo '<p class="form-row form-row-wide">';
+    echo __('Please select your preferred delivery date. Note: Deliveries are not available on weekends, UK public holidays, or within 2 business days from today.');
+    echo '</p>';
+    
     woocommerce_form_field('ggt_delivery_date', array(
-        'type' => 'date',
-        'class' => array('form-row-wide'),
+        'type' => 'text',
+        'class' => array('form-row-wide', 'ggt-delivery-date-field'),
         'label' => __('Select your desired delivery date'),
+        'placeholder' => __('Click to select a date'),
         'required' => true,
+        'custom_attributes' => array(
+            'autocomplete' => 'off',
+            'readonly' => 'readonly', // Make it read-only to force datepicker use
+            'data-is-datefield' => 'true', // Add custom attribute for better targeting
+        )
     ), $checkout->get_value('ggt_delivery_date'));
+    
     echo '</div>';
+    
+    // Mark that we've added the field to prevent duplicates
+    do_action('ggt_delivery_date_added');
+
+    // Load required scripts and styles
+    wp_enqueue_script('jquery-ui-core');
+    wp_enqueue_script('jquery-ui-datepicker');
+    wp_enqueue_style(
+        'jquery-ui-style',
+        '//code.jquery.com/ui/1.13.2/themes/smoothness/jquery-ui.css',
+        array(),
+        '1.13.2'
+    );
+}
+
+// Validate the delivery date field
+add_action('woocommerce_checkout_process', 'ggt_validate_delivery_date');
+function ggt_validate_delivery_date() {
+    if (empty($_POST['ggt_delivery_date'])) {
+        wc_add_notice(__('Please select a delivery date.'), 'error');
+        return;
+    }
+    
+    $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+    $date_timestamp = strtotime($delivery_date);
+    $today = strtotime('today');
+    
+    // Check if it's a valid date
+    if (!$date_timestamp) {
+        wc_add_notice(__('The delivery date is not valid.'), 'error');
+        return;
+    }
+    
+    // Ensure the date is at least 2 days in the future
+    if ($date_timestamp < strtotime('+2 days', $today)) {
+        wc_add_notice(__('The delivery date must be at least 2 business days from today.'), 'error');
+        return;
+    }
+    
+    // Check if it's a weekend
+    $day_of_week = date('N', $date_timestamp);
+    if ($day_of_week >= 6) { // 6 = Saturday, 7 = Sunday
+        wc_add_notice(__('Deliveries are not available on weekends.'), 'error');
+        return;
+    }
+    
+    // UK public holidays check would be here if we had a programmatic way to check
 }
 
 // Save the custom field value to order meta data
@@ -17,6 +89,15 @@ add_action('woocommerce_checkout_update_order_meta', 'ggt_save_delivery_date_fie
 function ggt_save_delivery_date_field($order_id) {
     if (!empty($_POST['ggt_delivery_date'])) {
         update_post_meta($order_id, 'ggt_delivery_date', sanitize_text_field($_POST['ggt_delivery_date']));
+    }
+}
+
+// Display the delivery date in admin order page
+add_action('woocommerce_admin_order_data_after_billing_address', 'ggt_display_delivery_date_in_admin');
+function ggt_display_delivery_date_in_admin($order) {
+    $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
+    if ($delivery_date) {
+        echo '<p><strong>' . __('Delivery Date') . ':</strong> ' . date_i18n(get_option('date_format'), strtotime($delivery_date)) . '</p>';
     }
 }
 
