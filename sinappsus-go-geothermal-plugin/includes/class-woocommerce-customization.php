@@ -120,15 +120,35 @@ function ggt_delivery_date_field_footer_fallback() {
     <?php
 }
 
-// Validate delivery date
+// Fix validation and saving of delivery date
 add_action('woocommerce_checkout_process', 'ggt_validate_delivery_date');
 function ggt_validate_delivery_date() {
-    if (empty($_POST['ggt_delivery_date'])) {
+    // Check for the delivery date in multiple possible form fields
+    $delivery_date = null;
+    
+    if (!empty($_POST['ggt_delivery_date'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+    } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
+    }
+    
+    // If still no date found, check other possible field names
+    if (empty($delivery_date)) {
+        foreach ($_POST as $key => $value) {
+            if (strpos($key, 'delivery_date') !== false && !empty($value)) {
+                $delivery_date = sanitize_text_field($value);
+                break;
+            }
+        }
+    }
+    
+    // If no date is found in any field, show error
+    if (empty($delivery_date)) {
         wc_add_notice(__('Please select a delivery date.'), 'error');
+        wc_get_logger()->error('No delivery date provided during checkout validation', ['source' => 'ggt-delivery']);
         return;
     }
     
-    $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
     $date_timestamp = strtotime($delivery_date);
     $today = strtotime('today');
     
@@ -151,27 +171,157 @@ function ggt_validate_delivery_date() {
         return;
     }
     
-    // UK public holidays check would be here if we had a programmatic way to check
+    // Store validated date in session for later use
+    WC()->session->set('ggt_validated_delivery_date', $delivery_date);
+    
+    wc_get_logger()->info(
+        sprintf('Delivery date validated successfully: %s', $delivery_date),
+        ['source' => 'ggt-delivery']
+    );
 }
 
-// Save the custom field value to order meta data with better logging
-add_action('woocommerce_checkout_update_order_meta', 'ggt_save_delivery_date_field');
-function ggt_save_delivery_date_field($order_id) {
+// Remove all previous hooks for saving delivery date to prevent conflicts
+remove_action('woocommerce_checkout_update_order_meta', 'ggt_save_delivery_date_field');
+
+// Improved saving of delivery date with comprehensive checks
+add_action('woocommerce_checkout_update_order_meta', 'ggt_improved_save_delivery_date', 20);
+function ggt_improved_save_delivery_date($order_id) {
+    $delivery_date = null;
+    
+    // Check multiple sources for the delivery date
     if (!empty($_POST['ggt_delivery_date'])) {
         $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+    } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
+    } elseif (WC()->session && WC()->session->get('ggt_validated_delivery_date')) {
+        $delivery_date = WC()->session->get('ggt_validated_delivery_date');
+    } else {
+        // Last attempt - check any POST field with delivery_date in the name
+        foreach ($_POST as $key => $value) {
+            if (strpos($key, 'delivery_date') !== false && !empty($value)) {
+                $delivery_date = sanitize_text_field($value);
+                break;
+            }
+        }
+    }
+    
+    if (!empty($delivery_date)) {
+        // Save using multiple meta keys for compatibility
         update_post_meta($order_id, 'ggt_delivery_date', $delivery_date);
+        update_post_meta($order_id, '_delivery_date', $delivery_date);
+        update_post_meta($order_id, '_ggt_delivery_date', $delivery_date);
+        update_post_meta($order_id, 'delivery_date', $delivery_date);
         
-        // Log successful saving for debugging
-        wc_get_logger()->info(
-            sprintf('Saved delivery date "%s" for order #%d', $delivery_date, $order_id),
+        // Also add it directly to the order object
+        $order = wc_get_order($order_id);
+        if ($order) {
+            $order->update_meta_data('ggt_delivery_date', $delivery_date);
+            $order->update_meta_data('_delivery_date', $delivery_date);
+            $order->update_meta_data('delivery_date', $delivery_date);
+            $order->save();
+            
+            // Force the order to include this field in all API responses
+            add_post_meta($order_id, '_delivery_date_included', 'yes', true);
+        }
+        
+        // Clear the session data
+        if (WC()->session) {
+            WC()->session->__unset('ggt_validated_delivery_date');
+        }
+        
+        // Add debugging data to confirm date was saved
+        wc_get_logger()->debug(
+            sprintf('Delivery date saved. Verification: Meta now contains: %s', 
+                get_post_meta($order_id, 'ggt_delivery_date', true)
+            ),
             ['source' => 'ggt-delivery']
         );
     } else {
         wc_get_logger()->error(
-            sprintf('No delivery date provided for order #%d', $order_id),
+            sprintf('Failed to find delivery date for order #%d in any expected location', $order_id),
             ['source' => 'ggt-delivery']
         );
     }
+}
+
+// Ensure we capture the delivery date at order creation time with highest priority
+add_action('woocommerce_checkout_create_order', 'ggt_capture_delivery_date_early', 5, 2);
+function ggt_capture_delivery_date_early($order, $data) {
+    $delivery_date = null;
+    
+    // Check all possible sources for the date
+    if (!empty($_POST['ggt_delivery_date'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+    } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
+    }
+    
+    // Log what we found
+    if (!empty($delivery_date)) {
+        wc_get_logger()->info(
+            sprintf('Early capture: Found delivery date "%s" for order #%d', $delivery_date, $order->get_id()), 
+            ['source' => 'ggt-delivery']
+        );
+        
+        // Save it to order meta
+        $order->update_meta_data('ggt_delivery_date', $delivery_date);
+        $order->update_meta_data('delivery_date', $delivery_date); // Also add non-prefixed version
+    } else {
+        wc_get_logger()->warning(
+            sprintf('Early capture: No delivery date found for order #%d', $order->get_id()),
+            ['source' => 'ggt-delivery']
+        );
+    }
+}
+
+// Also hook into direct order creation
+add_action('woocommerce_checkout_create_order', 'ggt_add_delivery_date_to_order', 20, 2);
+function ggt_add_delivery_date_to_order($order, $data) {
+    // Get delivery date from various possible sources
+    $delivery_date = null;
+    
+    if (!empty($_POST['ggt_delivery_date'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+    } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
+    } elseif (WC()->session && WC()->session->get('ggt_validated_delivery_date')) {
+        $delivery_date = WC()->session->get('ggt_validated_delivery_date');
+    }
+    
+    if (!empty($delivery_date)) {
+        // Save the delivery date to the order object directly
+        $order->update_meta_data('ggt_delivery_date', $delivery_date);
+        $order->update_meta_data('_delivery_date', $delivery_date);
+        
+        wc_get_logger()->info(
+            sprintf('Added delivery date "%s" directly to order object #%d', $delivery_date, $order->get_id()),
+            ['source' => 'ggt-delivery']
+        );
+    }
+}
+
+add_action('woocommerce_checkout_create_order', 'ggt_store_selected_delivery_data', 12, 2);
+function ggt_store_selected_delivery_data($order, $data) {
+    if (!empty($_POST['ggt_delivery_info'])) {
+        $order->update_meta_data('ggt_delivery_info', sanitize_text_field($_POST['ggt_delivery_info']));
+    }
+    if (!empty($_POST['ggt_delivery_date'])) {
+        $order->update_meta_data('ggt_delivery_date_selected', sanitize_text_field($_POST['ggt_delivery_date']));
+    } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
+        $order->update_meta_data('ggt_delivery_date_selected', sanitize_text_field($_POST['ggt_delivery_date_hidden']));
+    }
+}
+
+// Register the delivery date as a custom order field to ensure it shows in admin and REST API
+add_filter('woocommerce_api_order_response', 'ggt_add_delivery_date_to_api_response', 10, 2);
+function ggt_add_delivery_date_to_api_response($order_data, $order) {
+    $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
+    
+    if (!empty($delivery_date)) {
+        $order_data['delivery_date'] = $delivery_date;
+    }
+    
+    return $order_data;
 }
 
 // Display the delivery date in admin order page (enhanced)
@@ -261,67 +411,144 @@ function ggt_send_order_to_api($order_id) {
     }
 }
 
+// Add debug logging to the API function - FIXED: Removed duplicate function
 function ggt_send_order_to_api_endpoint($order, $delivery_date) {
+    // Add more aggressive debugging at the start
+    wc_get_logger()->debug('STARTING API SEND - Initial delivery date: ' . ($delivery_date ?: 'EMPTY'), ['source' => 'ggt-api']);
+    
     $api_key = ggt_get_decrypted_token();
     $endpoint = 'https://api.gogeothermal.co.uk/api/sales-orders/wp-new-order';
-
-    // Exclude credit payment method
+    
+    // Exclude credit payment method - skip sending
     if ($order->get_payment_method() === 'geo_credit') {
+        wc_get_logger()->info('Skipping API call for geo_credit payment method', ['source' => 'ggt-api']);
         return;
     }
-
+    
     $user_id = $order->get_user_id();
     $user_meta = get_user_meta($user_id);
     
+    // Dump order meta for debugging
+    $order_meta = get_post_meta($order->get_id());
+    $date_meta = array();
+    foreach ($order_meta as $key => $value) {
+        if (strpos($key, 'date') !== false || strpos($key, 'delivery') !== false) {
+            $date_meta[$key] = $value[0];
+        }
+    }
+    
+    wc_get_logger()->debug('Order date meta: ' . json_encode($date_meta), ['source' => 'ggt-api']);
+    
+    // If delivery date wasn't passed as a parameter or is empty, try all possible meta keys
+    if (empty($delivery_date)) {
+        $meta_keys_to_try = [
+            'ggt_delivery_date',
+            '_delivery_date',
+            '_ggt_delivery_date',
+            'delivery_date'
+        ];
+        
+        foreach ($meta_keys_to_try as $key) {
+            $meta_value = get_post_meta($order->get_id(), $key, true);
+            if (!empty($meta_value)) {
+                $delivery_date = $meta_value;
+                wc_get_logger()->info(
+                    sprintf('Found delivery date in meta key %s: %s', $key, $delivery_date),
+                    ['source' => 'ggt-api']
+                );
+                break;
+            }
+        }
+    }
+    
+    // Also check the session as a last resort
+    if (empty($delivery_date) && WC()->session && WC()->session->get('ggt_validated_delivery_date')) {
+        $delivery_date = WC()->session->get('ggt_validated_delivery_date');
+        wc_get_logger()->info(
+            sprintf('Found delivery date in session: %s', $delivery_date),
+            ['source' => 'ggt-api']
+        );
+    }
+    
+    // Right before preparing the API payload, make one final check for the date
+    if (empty($delivery_date)) {
+        // Last desperate attempt - check the order meta directly
+        $delivery_date = $order->get_meta('ggt_delivery_date');
+        wc_get_logger()->debug('Last resort check for date - found: ' . ($delivery_date ?: 'STILL EMPTY'), ['source' => 'ggt-api']);
+    }
+    
     // Format delivery date to ensure consistent API format
     $formatted_delivery_date = $delivery_date ? date('Y-m-d', strtotime($delivery_date)) : null;
-
-    $order_data = array(
-        'order_id'    => $order->get_id(),
-        'user_id'     => $user_id,
-        'total'       => $order->get_total(),
-        'currency'    => get_woocommerce_currency(),
-        'billing'     => $order->get_address('billing'),
-        'shipping'    => $order->get_address('shipping'),
-        'user_meta'   => $user_meta, // Include user meta data
-        'items'       => array(),
-        'delivery_date' => $formatted_delivery_date, // Include the delivery date in consistent format
-    );
-
-    // Log the data we're sending to the API
+    
+    // Log what we're sending to the API
     wc_get_logger()->info(
-        sprintf('Order data for API (order #%d): %s', $order->get_id(), json_encode([
-            'delivery_date' => $formatted_delivery_date,
-            'total' => $order->get_total(),
-            'payment_method' => $order->get_payment_method()
-        ])),
+        sprintf('Sending order #%d to API with delivery date: %s (original: %s)',
+            $order->get_id(),
+            $formatted_delivery_date ?: 'null',
+            $delivery_date ?: 'null'
+        ),
+        ['source' => 'ggt-api']
+    );
+    
+    $order_data = [
+        'order_id'      => $order->get_id(),
+        'user_id'       => $user_id,
+        'total'         => $order->get_total(),
+        'currency'      => get_woocommerce_currency(),
+        'billing'       => $order->get_address('billing'),
+        'shipping'      => $order->get_address('shipping'),
+        'user_meta'     => $user_meta,
+        'items'         => [],
+        'delivery_date' => $formatted_delivery_date,
+        'delivery_date_raw' => $delivery_date // For debugging
+    ];
+    
+    foreach ($order->get_items() as $item_id => $item) {
+        $product = $item->get_product();
+        if (!$product) continue;
+        
+        $stock_code = get_post_meta($product->get_id(), '_stockCode', true);
+        
+        $order_data['items'][] = [
+            'product_id' => $product->get_id(),
+            'name'       => $item->get_name(),
+            'quantity'   => $item->get_quantity(),
+            'price'      => $item->get_total(),
+            'stock_code' => $stock_code,
+        ];
+    }
+    
+    wc_get_logger()->debug(
+        'Order data being sent to API: ' . print_r($order_data, true),
         ['source' => 'ggt-api']
     );
 
-    foreach ($order->get_items() as $item_id => $item) {
-        $product = $item->get_product();
-        $stock_code = get_post_meta($product->get_id(), '_stockCode', true); // Fetch the stock code
-
-        $order_data['items'][] = array(
-            'product_id' => $product->get_id(),
-            'name'       => $product->get_name(),
-            'quantity'   => $item->get_quantity(),
-            'price'      => $item->get_total(),
-            'stock_code' => $stock_code, // Include the stock code
-        );
-    }
-
-    $response = wp_remote_post($endpoint, array(
+    $response = wp_remote_post($endpoint, [
         'method'    => 'POST',
         'timeout'   => 300,
-        'headers'   => array(
+        'headers'   => [
             'Authorization' => 'Bearer ' . $api_key,
             'Content-Type'  => 'application/json',
             'Accept'        => 'application/json',
-        ),
+        ],
         'body'      => json_encode($order_data),
-    ));
-
+    ]);
+    
+    // Log response
+    if (is_wp_error($response)) {
+        wc_get_logger()->error(
+            sprintf('API error for order #%d: %s', $order->get_id(), $response->get_error_message()),
+            ['source' => 'ggt-api']
+        );
+    } else {
+        $code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        wc_get_logger()->info(
+            sprintf('API response for order #%d: Code %d with body %s', $order->get_id(), $code, $body),
+            ['source' => 'ggt-api']
+        );
+    }
+    
     return $response;
 }
 
@@ -386,3 +613,94 @@ function ggt_load_credit_gateway() {
     }
 }
 add_action('plugins_loaded', 'ggt_load_credit_gateway', 11);
+
+add_action('woocommerce_checkout_create_order', 'ggt_save_shipping_fields_to_meta', 15, 2);
+function ggt_save_shipping_fields_to_meta($order, $data) {
+    $fields = array(
+        'shipping_first_name',
+        'shipping_last_name',
+        'shipping_company',
+        'shipping_address_1',
+        'shipping_address_2',
+        'shipping_city',
+        'shipping_state',
+        'shipping_postcode',
+        'shipping_country',
+    );
+    foreach ($fields as $field) {
+        $key = 'ggt_' . $field;
+        if (!empty($_POST[$key])) {
+            $order->update_meta_data($key, sanitize_text_field($_POST[$key]));
+        }
+    }
+}
+
+// AJAX handler to store delivery date in session
+add_action('wp_ajax_ggt_store_delivery_date', 'ggt_ajax_store_delivery_date');
+add_action('wp_ajax_nopriv_ggt_store_delivery_date', 'ggt_ajax_store_delivery_date');
+
+function ggt_ajax_store_delivery_date() {
+    check_ajax_referer('ggt_checkout_nonce', 'nonce');
+    
+    if (!empty($_POST['delivery_date'])) {
+        $delivery_date = sanitize_text_field($_POST['delivery_date']);
+        WC()->session->set('ggt_validated_delivery_date', $delivery_date);
+        
+        wc_get_logger()->info(
+            sprintf('AJAX: Stored delivery date in session: %s', $delivery_date),
+            ['source' => 'ggt-delivery']
+        );
+        
+        wp_send_json_success(['saved' => true]);
+    } else {
+        wp_send_json_error(['saved' => false]);
+    }
+    
+    wp_die();
+}
+
+// Add redundant check on checkout process to catch the backup value
+add_action('woocommerce_checkout_process', 'ggt_redundant_delivery_date_check', 5);
+function ggt_redundant_delivery_date_check() {
+    if (empty($_POST['ggt_delivery_date']) && empty($_POST['ggt_delivery_date_hidden']) && !empty($_POST['_delivery_date_backup'])) {
+        // Found backup date, copy it to proper fields
+        $_POST['ggt_delivery_date_hidden'] = sanitize_text_field($_POST['_delivery_date_backup']);
+        wc_get_logger()->info(
+            sprintf('Using delivery date from backup field: %s', $_POST['_delivery_date_backup']),
+            ['source' => 'ggt-delivery']
+        );
+    }
+}
+
+// Extra safety for capturing delivery date
+add_action('woocommerce_checkout_create_order', 'ggt_emergency_delivery_date_capture', 1, 2);
+function ggt_emergency_delivery_date_capture($order, $data) {
+    $delivery_date = null;
+    
+    // Check all possible sources in descending priority
+    if (!empty($_POST['ggt_delivery_date'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+    } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
+    } elseif (!empty($_POST['_delivery_date_backup'])) {
+        $delivery_date = sanitize_text_field($_POST['_delivery_date_backup']);
+    } elseif (WC()->session && WC()->session->get('ggt_validated_delivery_date')) {
+        $delivery_date = WC()->session->get('ggt_validated_delivery_date');
+    }
+    
+    if (!empty($delivery_date)) {
+        // Save it immediately so it doesn't get lost
+        $order->update_meta_data('ggt_delivery_date', $delivery_date);
+        $order->update_meta_data('delivery_date', $delivery_date);
+        
+        wc_get_logger()->info(
+            sprintf('EMERGENCY: Set delivery date %s on order %s', $delivery_date, $order->get_id()),
+            ['source' => 'ggt-delivery']
+        );
+    } else {
+        wc_get_logger()->warning(
+            sprintf('EMERGENCY: Could not find delivery date for order %s', $order->get_id()),
+            ['source' => 'ggt-delivery']
+        );
+    }
+}

@@ -224,11 +224,43 @@
                 }
                 
                 return [true, '', ''];
+            },
+            onSelect: function(dateText) {
+                console.log('✅ [GGT] Delivery date selected:', dateText);
+                
+                // Store in multiple places to ensure it gets captured
+                // 1. Regular field value
+                $(this).val(dateText).trigger('change');
+                
+                // 2. Hidden field for form submission
+                if (!$('input[name="ggt_delivery_date_hidden"]').length) {
+                    $('form.checkout').append('<input type="hidden" name="ggt_delivery_date_hidden" value="' + dateText + '">');
+                } else {
+                    $('input[name="ggt_delivery_date_hidden"]').val(dateText);
+                }
+                
+                // 3. LocalStorage for persistent backup
+                try {
+                    localStorage.setItem('ggt_delivery_date', dateText);
+                    console.log('✅ [GGT] Date saved to localStorage');
+                } catch (e) {
+                    console.log('⚠️ [GGT] Could not save to localStorage:', e);
+                }
+                
+                // 4. Send via AJAX to store in session
+                $.ajax({
+                    url: ggt_checkout_data.ajax_url,
+                    type: 'POST',
+                    data: {
+                        action: 'ggt_store_delivery_date',
+                        nonce: ggt_checkout_data.nonce,
+                        delivery_date: dateText
+                    },
+                    success: function() {
+                        console.log('✅ [GGT] Date saved to server session');
+                    }
+                });
             }
-        });
-        
-        $dateField.on('click', function() {
-            $(this).datepicker('show');
         });
         
         console.log('✅ [GGT] Date picker initialized with ' + ukHolidays.length + ' holidays');
@@ -236,7 +268,6 @@
     
     function fetchCustomerPricing() {
         if (pricingFetched) return;
-        
         if (!ggt_checkout_data || !ggt_checkout_data.account_ref) {
             console.log('⚠️ [GGT] No customer account reference found.');
             pricingFetched = true;
@@ -256,7 +287,6 @@
             success: function(response) {
                 pricingFetched = true;
                 console.log('🔄 [GGT] Pricing response:', response);
-                
                 // Check multiple possible paths to find pricing data
                 let prices = null;
                 
@@ -264,7 +294,7 @@
                     if (response.data.response && response.data.response.prices) {
                         prices = response.data.response.prices;
                         console.log('✅ [GGT] Found prices in response.data.response.prices');
-                    } else if (response.data.results && response.data.results.prices) { 
+                    } else if (response.data.results && response.data.results.prices) {
                         prices = response.data.results.prices;
                         console.log('✅ [GGT] Found prices in response.data.results.prices');
                     } else if (response.data.prices) {
@@ -343,7 +373,6 @@
         
         // Try multiple selectors for shipping address section
         const $shippingForm = $('.woocommerce-shipping-fields, #shipping_address, [id*="shipping"]').first();
-        
         if ($shippingForm.length && !$('#ggt-show-delivery-addresses').length) {
             $shippingForm.prepend(
                 '<div class="ggt-delivery-address-selector">' +
@@ -390,7 +419,6 @@
             },
             success: function(response) {
                 console.log('🔄 [GGT] Delivery addresses response:', response);
-                
                 // The results array directly contains the addresses, not results.addresses
                 if (response.success && response.data && response.data.results) {
                     console.log('✅ [GGT] Found ' + response.data.results.length + ' delivery addresses');
@@ -443,17 +471,187 @@
     }
     
     function selectDeliveryAddress(address) {
-        // Update shipping address fields
-        $('#shipping_first_name').val($('#billing_first_name').val());
-        $('#shipping_last_name').val($('#billing_last_name').val());
-        $('#shipping_company').val(address.addressName || '');
-        $('#shipping_address_1').val(address.addressLine1 || '');
-        $('#shipping_address_2').val(address.addressLine2 || '');
-        $('#shipping_city').val(address.addressLine3 || '');
-        $('#shipping_state').val(address.addressLine4 || '');
-        $('#shipping_postcode').val(address.postCode || '');
+        console.log('[GGT] Selecting delivery address:', address);
         
-        // Trigger update
-        $('body').trigger('update_checkout');
+        // Map the address fields correctly from API response to form fields
+        const mappedAddress = {
+            first_name: $('#billing_first_name').val() || '',
+            last_name: $('#billing_last_name').val() || '',
+            company: address.addressName || '',
+            address_1: address.addressLine1 || '',
+            address_2: address.addressLine2 || '',
+            city: address.addressLine3 || address.town || '',
+            state: address.addressLine4 || address.county || '',
+            postcode: address.postCode || '',
+            country: address.countryCode || 'GB'
+        };
+        
+        console.log('[GGT] Mapped address fields:', mappedAddress);
+        
+        // Ensure "Ship to different address" is checked
+        const $checkbox = $('#ship-to-different-address-checkbox');
+        if ($checkbox.length && !$checkbox.is(':checked')) {
+            $checkbox.prop('checked', true).trigger('change');
+            // Wait for fields to appear in DOM
+            setTimeout(function() {
+                updateShippingFields(mappedAddress);
+            }, 500);
+        } else {
+            updateShippingFields(mappedAddress);
+        }
+        
+        // Store address info in hidden field
+        storeDeliveryInfo(JSON.stringify(mappedAddress));
     }
+    
+    function updateShippingFields(address) {
+        // Update each field with the mapped values
+        $('#shipping_first_name').val(address.first_name).trigger('change');
+        $('#shipping_last_name').val(address.last_name).trigger('change');
+        $('#shipping_company').val(address.company).trigger('change');
+        $('#shipping_address_1').val(address.address_1).trigger('change');
+        $('#shipping_address_2').val(address.address_2).trigger('change');
+        $('#shipping_city').val(address.city).trigger('change');
+        $('#shipping_state').val(address.state).trigger('change');
+        $('#shipping_postcode').val(address.postcode).trigger('change');
+        
+        // Country field often needs special handling
+        const $countryField = $('#shipping_country');
+        if ($countryField.length) {
+            $countryField.val(address.country).trigger('change');
+        }
+        
+        // Some themes use different field IDs - try these too
+        const alternativeFields = {
+            '#shipping_address': address.address_1,
+            '[name="shipping_address"]': address.address_1,
+            '#shipping_city, #shipping_town': address.city,
+            '[name="shipping_city"], [name="shipping_town"]': address.city,
+            '#shipping_state, #shipping_county': address.state,
+            '[name="shipping_state"], [name="shipping_county"]': address.state
+        };
+        
+        // Try to set alternative fields
+        $.each(alternativeFields, function(selector, value) {
+            $(selector).val(value).trigger('change');
+        });
+        
+        // Also store these in sessionStorage for persistence
+        try {
+            sessionStorage.setItem('ggt_shipping_address', JSON.stringify(address));
+        } catch (e) {
+            console.log('⚠️ [GGT] Could not save address to sessionStorage:', e);
+        }
+        
+        // Trigger an update after fields are set
+        setTimeout(function() {
+            $('body').trigger('update_checkout');
+        }, 500);
+        
+        console.log('✅ [GGT] Shipping fields updated with selected address');
+    }
+    
+    function storeDeliveryInfo(deliveryInfo) {
+        // Put selected delivery address in hidden field
+        if (!$('input[name="ggt_delivery_info"]').length) {
+            $('form.checkout').append(
+                '<input type="hidden" name="ggt_delivery_info" value="' + deliveryInfo + '">'
+            );
+        } else {
+            $('input[name="ggt_delivery_info"]').val(deliveryInfo);
+        }
+    }
+    
+    // Add this at the end of the file to ensure form submission captures the delivery date
+    $(document).ready(function() {
+        if ($('body').hasClass('woocommerce-checkout')) {
+            // Check for previously stored date in localStorage
+            try {
+                const storedDate = localStorage.getItem('ggt_delivery_date');
+                if (storedDate && $('#ggt_delivery_date').length) {
+                    $('#ggt_delivery_date').val(storedDate);
+                    console.log('✅ [GGT] Restored date from localStorage:', storedDate);
+                    
+                    // Also ensure hidden field has the value
+                    if (!$('input[name="ggt_delivery_date_hidden"]').length) {
+                        $('form.checkout').append('<input type="hidden" name="ggt_delivery_date_hidden" value="' + storedDate + '">');
+                    } else {
+                        $('input[name="ggt_delivery_date_hidden"]').val(storedDate);
+                    }
+                }
+            } catch (e) {
+                console.log('⚠️ [GGT] Could not access localStorage:', e);
+            }
+            
+            // Make absolutely sure date is submitted with checkout
+            $('form.checkout').on('submit checkout_place_order', function() {
+                const date = $('#ggt_delivery_date').val() || localStorage.getItem('ggt_delivery_date');
+                if (date) {
+                    console.log('✅ [GGT] Form submission - adding date:', date);
+                    
+                    // Create or update hidden field
+                    if (!$('input[name="ggt_delivery_date_hidden"]').length) {
+                        $(this).append('<input type="hidden" name="ggt_delivery_date_hidden" value="' + date + '">');
+                    } else {
+                        $('input[name="ggt_delivery_date_hidden"]').val(date);
+                    }
+                    
+                    // Add a second backup field with different name
+                    if (!$('input[name="_delivery_date_backup"]').length) {
+                        $(this).append('<input type="hidden" name="_delivery_date_backup" value="' + date + '">');
+                    } else {
+                        $('input[name="_delivery_date_backup"]').val(date);
+                    }
+                }
+            });
+        }
+    });
+
+    function storeShippingFields() {
+        const fields = [
+            'shipping_first_name',
+            'shipping_last_name',
+            'shipping_company',
+            'shipping_address_1',
+            'shipping_address_2',
+            'shipping_city',
+            'shipping_state',
+            'shipping_postcode',
+            'shipping_country'
+        ];
+        fields.forEach(function(field) {
+            const val = $('#' + field).val() || '';
+            const name = 'ggt_' + field;
+            if (!$('input[name="' + name + '"]').length) {
+                $('form.checkout').append('<input type="hidden" name="' + name + '" value="' + val + '">');
+            } else {
+                $('input[name="' + name + '"]').val(val);
+            }
+        });
+    }
+
+    $(document).on('click', '#place_order, form.checkout input[type="submit"]', function() {
+        storeShippingFields();
+    });
+
+    $(document).on('click', '.select-shipping-address', function() {
+        // Suppose we detect user-chosen address details here
+        const selectedAddress = {
+            first_name: 'Alice',
+            last_name: 'Smith',
+            // ...other address fields...
+        };
+
+        // Write them into hidden fields
+        Object.entries(selectedAddress).forEach(([key, val]) => {
+            const hiddenFieldName = 'ggt_shipping_' + key;
+            if (!$('input[name="' + hiddenFieldName + '"]').length) {
+                $('form.checkout').append(
+                    '<input type="hidden" name="' + hiddenFieldName + '" value="' + val + '">'
+                );
+            } else {
+                $('input[name="' + hiddenFieldName + '"]').val(val);
+            }
+        });
+    });
 })(jQuery);

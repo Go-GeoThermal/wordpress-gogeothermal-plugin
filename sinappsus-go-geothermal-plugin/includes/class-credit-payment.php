@@ -86,8 +86,69 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         $order = wc_get_order($order_id);
         $user_id = $order->get_user_id();
 
-        // Get the desired delivery date
-        $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
+        // Comprehensive check for delivery date from multiple sources
+        $delivery_date = null;
+        $meta_keys_to_try = ['ggt_delivery_date', '_delivery_date', '_ggt_delivery_date', 'delivery_date'];
+        
+        foreach ($meta_keys_to_try as $key) {
+            $meta_value = get_post_meta($order_id, $key, true);
+            if (!empty($meta_value)) {
+                $delivery_date = $meta_value;
+                $this->logger->info(
+                    sprintf('Found delivery date in meta key %s: %s for order #%d', $key, $delivery_date, $order_id),
+                    ['source' => 'geo-credit']
+                );
+                break;
+            }
+        }
+        
+        // Check POST data if no date found in meta
+        if (empty($delivery_date)) {
+            if (!empty($_POST['ggt_delivery_date'])) {
+                $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+            } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
+                $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
+            } else {
+                // Last attempt - check any POST field with delivery_date in the name
+                foreach ($_POST as $key => $value) {
+                    if (strpos($key, 'delivery_date') !== false && !empty($value)) {
+                        $delivery_date = sanitize_text_field($value);
+                        break;
+                    }
+                }
+            }
+            
+            // If found in POST, save it to all possible meta keys
+            if (!empty($delivery_date)) {
+                foreach ($meta_keys_to_try as $key) {
+                    update_post_meta($order_id, $key, $delivery_date);
+                }
+                $this->logger->info(
+                    sprintf('Saved delivery date from POST data: %s for order #%d', $delivery_date, $order_id),
+                    ['source' => 'geo-credit']
+                );
+            }
+        }
+        
+        // Also check session as last resort
+        if (empty($delivery_date) && WC()->session && WC()->session->get('ggt_validated_delivery_date')) {
+            $delivery_date = WC()->session->get('ggt_validated_delivery_date');
+            foreach ($meta_keys_to_try as $key) {
+                update_post_meta($order_id, $key, $delivery_date);
+            }
+            $this->logger->info(
+                sprintf('Saved delivery date from session: %s for order #%d', $delivery_date, $order_id),
+                ['source' => 'geo-credit']
+            );
+        }
+        
+        // If still no date, log a warning
+        if (empty($delivery_date)) {
+            $this->logger->warning(
+                sprintf('No delivery date found for order #%d', $order_id),
+                ['source' => 'geo-credit']
+            );
+        }
 
         // Try different meta keys where credit limit might be stored
         $credit_limit = get_user_meta($user_id, 'CreditLimit', true);
@@ -151,27 +212,76 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         $user_id = $order->get_user_id();
         $user_meta = get_user_meta($user_id);
         
-        // Format delivery date to ensure consistent API format
-        $formatted_delivery_date = $delivery_date ? date('Y-m-d', strtotime($delivery_date)) : null;
+        // ENHANCED DEBUGGING - log all meta
+        $all_meta = get_post_meta($order->get_id());
+        $relevant_meta = [];
+        foreach ($all_meta as $key => $values) {
+            if (strpos($key, 'delivery') !== false || strpos($key, 'date') !== false) {
+                $relevant_meta[$key] = $values[0];
+            }
+        }
+        
+        $this->logger->debug(
+            sprintf('Credit payment: Order #%d relevant meta: %s', $order->get_id(), json_encode($relevant_meta)),
+            ['source' => 'geo-credit']
+        );
+        
+        // If no delivery date provided, try multiple sources
+        if (empty($delivery_date)) {
+            $meta_keys_to_try = ['ggt_delivery_date', '_delivery_date', '_ggt_delivery_date', 'delivery_date'];
+            
+            foreach ($meta_keys_to_try as $key) {
+                $meta_value = get_post_meta($order->get_id(), $key, true);
+                if (!empty($meta_value)) {
+                    $delivery_date = $meta_value;
+                    $this->logger->info(
+                        sprintf('Found delivery date in meta key %s: %s', $key, $delivery_date),
+                        ['source' => 'geo-credit']
+                    );
+                    break;
+                }
+            }
+        }
+        
+        // FINAL fallback to order meta if still empty
+        if (empty($delivery_date)) {
+            $delivery_date = $order->get_meta('ggt_delivery_date');
+            $this->logger->info(
+                sprintf('Fallback delivery date from order meta: %s', $delivery_date ?: 'none'),
+                ['source' => 'geo-credit']
+            );
+        }
 
-        // Log the delivery date we're sending
+        // Log final delivery date, then include it in $order_data
         $this->logger->info(
-            sprintf('Credit payment - sending order #%d with delivery date: %s', $order->get_id(), $formatted_delivery_date ?: 'not set'), 
+            sprintf('Final delivery date for API: %s', $delivery_date ?: 'none'),
             ['source' => 'geo-credit']
         );
 
-        $order_data = array(
-            'order_id'    => $order->get_id(),
-            'user_id'     => $user_id,
-            'total'       => $order->get_total(),
-            'currency'    => get_woocommerce_currency(),
-            'billing'     => $order->get_address('billing'),
-            'shipping'    => $order->get_address('shipping'),
-            'user_meta'   => $user_meta, // Include user meta data
-            'items'       => array(),
-            'delivery_date' => $formatted_delivery_date, // Include the delivery date in consistent format
+        // Format delivery date to ensure consistent API format
+        $formatted_delivery_date = $delivery_date ? date('Y-m-d', strtotime($delivery_date)) : null;
+        
+        $this->logger->info(
+            sprintf('Credit payment - sending order #%d with delivery date: %s (original: %s)', 
+                $order->get_id(), 
+                $formatted_delivery_date ?: 'not set', 
+                $delivery_date ?: 'not set'
+            ), 
+            ['source' => 'geo-credit']
         );
-
+        
+        $order_data = array(
+            'order_id'      => $order->get_id(),
+            'user_id'       => $user_id,
+            'total'         => $order->get_total(),
+            'currency'      => get_woocommerce_currency(),
+            'billing'       => $order->get_address('billing'),
+            'shipping'      => $order->get_address('shipping'),
+            'user_meta'     => $user_meta,
+            'items'         => array(),
+            'delivery_date' => $formatted_delivery_date,
+        );
+        
         foreach ($order->get_items() as $item_id => $item) {
             $product = $item->get_product();
             $stock_code = get_post_meta($product->get_id(), '_stockCode', true); // Fetch the stock code
@@ -184,6 +294,11 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
                 'stock_code' => $stock_code, // Include the stock code
             );
         }
+
+        $this->logger->debug(
+            'Prepared order data for API: ' . print_r($order_data, true),
+            ['source' => 'geo-credit']
+        );
 
         $response = wp_remote_post($endpoint, array(
             'method'    => 'POST',
