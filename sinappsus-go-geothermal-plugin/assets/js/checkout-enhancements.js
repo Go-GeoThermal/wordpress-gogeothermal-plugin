@@ -500,8 +500,12 @@
             updateShippingFields(mappedAddress);
         }
         
-        // Store address info in hidden field
-        storeDeliveryInfo(JSON.stringify(mappedAddress));
+        // Store complete address info in hidden field - IMPORTANT: Include original API data too
+        const fullAddressData = {
+            mapped: mappedAddress,
+            original: address
+        };
+        storeDeliveryInfo(JSON.stringify(fullAddressData));
     }
     
     function updateShippingFields(address) {
@@ -555,11 +559,21 @@
         // Put selected delivery address in hidden field
         if (!$('input[name="ggt_delivery_info"]').length) {
             $('form.checkout').append(
-                '<input type="hidden" name="ggt_delivery_info" value="' + deliveryInfo + '">'
+                '<input type="hidden" name="ggt_delivery_info" value="' + deliveryInfo.replace(/"/g, '&quot;') + '">'
             );
         } else {
-            $('input[name="ggt_delivery_info"]').val(deliveryInfo);
+            $('input[name="ggt_delivery_info"]').val(deliveryInfo.replace(/"/g, '&quot;'));
         }
+        
+        // Also store in sessionStorage for persistence
+        try {
+            sessionStorage.setItem('ggt_delivery_info', deliveryInfo);
+            console.log('✅ [GGT] Stored delivery address in sessionStorage');
+        } catch(e) {
+            console.log('⚠️ [GGT] Failed to store address in sessionStorage:', e);
+        }
+        
+        console.log('✅ [GGT] Stored delivery info in hidden field');
     }
     
     // Add this at the end of the file to ensure form submission captures the delivery date

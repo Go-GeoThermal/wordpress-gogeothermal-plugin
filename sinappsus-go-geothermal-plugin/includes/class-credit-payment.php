@@ -323,16 +323,31 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             ['source' => 'geo-credit']
         );
         
+        // Look for delivery address information
+        $delivery_address = null;
+        $delivery_address_json = $order->get_meta('ggt_delivery_info');
+        if (!empty($delivery_address_json)) {
+            $delivery_address_data = json_decode(stripslashes($delivery_address_json), true);
+            if ($delivery_address_data && isset($delivery_address_data['original'])) {
+                $delivery_address = $delivery_address_data['original'];
+                $this->logger->info(
+                    'Found delivery address data in order meta for credit payment',
+                    ['source' => 'geo-credit']
+                );
+            }
+        }
+        
         $order_data = array(
-            'order_id'      => $order->get_id(),
-            'user_id'       => $user_id,
-            'total'         => $order->get_total(),
-            'currency'      => get_woocommerce_currency(),
-            'billing'       => $order->get_address('billing'),
-            'shipping'      => $order->get_address('shipping'),
-            'user_meta'     => $user_meta,
-            'items'         => array(),
-            'delivery_date' => $formatted_delivery_date,
+            'order_id'       => $order->get_id(),
+            'user_id'        => $user_id,
+            'total'          => $order->get_total(),
+            'currency'       => get_woocommerce_currency(),
+            'billing'        => $order->get_address('billing'),
+            'shipping'       => $order->get_address('shipping'),
+            'user_meta'      => $user_meta,
+            'items'          => array(),
+            'delivery_date'  => $formatted_delivery_date,
+            'delivery_address' => $delivery_address // Add delivery address data
         );
         
         foreach ($order->get_items() as $item_id => $item) {

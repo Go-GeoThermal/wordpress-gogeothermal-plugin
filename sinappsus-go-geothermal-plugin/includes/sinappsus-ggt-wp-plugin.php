@@ -196,4 +196,22 @@ function ggt_log_order_meta($order_id, $posted_data, $order) {
             ['source' => 'ggt-debug']
         );
     }
+    
+    // Check for delivery address data
+    $delivery_info = get_post_meta($order_id, 'ggt_delivery_info', true);
+    
+    if (!empty($delivery_info)) {
+        wc_get_logger()->debug(
+            sprintf('Order #%d has delivery address info: %s',
+                $order_id, 
+                substr($delivery_info, 0, 100) . '...' // First 100 chars to avoid huge logs
+            ),
+            ['source' => 'ggt-debug']
+        );
+    } else {
+        wc_get_logger()->debug(
+            sprintf('Order #%d - No delivery address information found', $order_id),
+            ['source' => 'ggt-debug']
+        );
+    }
 }

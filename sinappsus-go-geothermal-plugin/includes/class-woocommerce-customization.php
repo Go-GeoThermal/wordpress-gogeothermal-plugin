@@ -302,9 +302,38 @@ function ggt_add_delivery_date_to_order($order, $data) {
 
 add_action('woocommerce_checkout_create_order', 'ggt_store_selected_delivery_data', 12, 2);
 function ggt_store_selected_delivery_data($order, $data) {
+    // Store delivery information (selected address)
     if (!empty($_POST['ggt_delivery_info'])) {
-        $order->update_meta_data('ggt_delivery_info', sanitize_text_field($_POST['ggt_delivery_info']));
+        $delivery_info = sanitize_text_field($_POST['ggt_delivery_info']);
+        
+        // Store the raw JSON data
+        $order->update_meta_data('ggt_delivery_info', $delivery_info);
+        
+        // Also parse and store individual fields for easier access
+        $address_data = json_decode(stripslashes($delivery_info), true);
+        if ($address_data && isset($address_data['mapped'])) {
+            foreach ($address_data['mapped'] as $key => $value) {
+                $order->update_meta_data('ggt_shipping_' . $key, sanitize_text_field($value));
+            }
+            
+            // Also save the original API address data
+            if (isset($address_data['original'])) {
+                $order->update_meta_data('ggt_delivery_address_original', json_encode($address_data['original']));
+                
+                // Save individual original fields too
+                foreach ($address_data['original'] as $key => $value) {
+                    $order->update_meta_data('ggt_delivery_orig_' . $key, sanitize_text_field($value));
+                }
+            }
+            
+            wc_get_logger()->info(
+                sprintf('Saved selected delivery address for order #%d', $order->get_id()),
+                ['source' => 'ggt-delivery']
+            );
+        }
     }
+    
+    // Store delivery date
     if (!empty($_POST['ggt_delivery_date'])) {
         $order->update_meta_data('ggt_delivery_date_selected', sanitize_text_field($_POST['ggt_delivery_date']));
     } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
@@ -480,6 +509,20 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
     // Format delivery date to ensure consistent API format
     $formatted_delivery_date = $delivery_date ? date('Y-m-d', strtotime($delivery_date)) : null;
     
+    // Get selected delivery address data
+    $delivery_address = null;
+    $delivery_address_json = $order->get_meta('ggt_delivery_info');
+    if (!empty($delivery_address_json)) {
+        $delivery_address_data = json_decode(stripslashes($delivery_address_json), true);
+        if ($delivery_address_data && isset($delivery_address_data['original'])) {
+            $delivery_address = $delivery_address_data['original'];
+            wc_get_logger()->info(
+                'Found delivery address data in order meta',
+                ['source' => 'ggt-api']
+            );
+        }
+    }
+    
     // Log what we're sending to the API
     wc_get_logger()->info(
         sprintf('Sending order #%d to API with delivery date: %s (original: %s)',
@@ -491,16 +534,17 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
     );
     
     $order_data = [
-        'order_id'      => $order->get_id(),
-        'user_id'       => $user_id,
-        'total'         => $order->get_total(),
-        'currency'      => get_woocommerce_currency(),
-        'billing'       => $order->get_address('billing'),
-        'shipping'      => $order->get_address('shipping'),
-        'user_meta'     => $user_meta,
-        'items'         => [],
-        'delivery_date' => $formatted_delivery_date,
-        'delivery_date_raw' => $delivery_date // For debugging
+        'order_id'         => $order->get_id(),
+        'user_id'          => $user_id,
+        'total'            => $order->get_total(),
+        'currency'         => get_woocommerce_currency(),
+        'billing'          => $order->get_address('billing'),
+        'shipping'         => $order->get_address('shipping'),
+        'user_meta'        => $user_meta,
+        'items'            => [],
+        'delivery_date'    => $formatted_delivery_date,
+        'delivery_date_raw' => $delivery_date, // For debugging
+        'delivery_address' => $delivery_address // Add delivery address to the API payload
     ];
     
     foreach ($order->get_items() as $item_id => $item) {
