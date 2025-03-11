@@ -35,6 +35,21 @@ add_action('woocommerce_blocks_loaded', function() {
     }
 });
 
+// Include checkout enhancements
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-checkout-enhancements.php';
 
 // Include woocommerce customization for delivery date and auto passing additional payment methods
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-woocommerce-customization.php';
+
+// Enqueue checkout enhancement styles
+add_action('wp_enqueue_scripts', 'ggt_enqueue_checkout_styles');
+function ggt_enqueue_checkout_styles() {
+    if (is_checkout()) {
+        wp_enqueue_style(
+            'ggt-checkout-enhancements',
+            plugins_url('sinappsus-go-geothermal-plugin/assets/css/checkout-enhancements.css', dirname(__FILE__, 2)),
+            array(),
+            '1.0.0'
+        );
+    }
+}

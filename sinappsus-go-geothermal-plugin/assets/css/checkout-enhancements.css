@@ -1,0 +1,172 @@
+/**
+ * Checkout enhancements styles
+ */
+
+/* Delivery address selector button */
+.ggt-delivery-address-selector {
+    margin-bottom: 20px;
+}
+
+#ggt-show-delivery-addresses {
+    margin-bottom: 15px;
+    background-color: #f7f7f7;
+    color: #515151;
+    border: 1px solid #ccc;
+}
+
+#ggt-show-delivery-addresses:hover {
+    background-color: #ebe9eb;
+}
+
+/* Modal styles */
+#ggt-delivery-addresses-modal {
+    position: fixed;
+    z-index: 9999;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.5);
+}
+
+#ggt-delivery-addresses-modal .modal-content {
+    background-color: #fefefe;
+    margin: 10% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 600px;
+    border-radius: 5px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+#ggt-delivery-addresses-modal .close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1;
+}
+
+#ggt-delivery-addresses-modal .close:hover {
+    color: #000;
+}
+
+/* Address list styles */
+.ggt-address-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.ggt-address-item {
+    padding: 15px;
+    margin-bottom: 15px;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    background-color: #f9f9f9;
+    transition: background-color 0.2s ease;
+}
+
+.ggt-address-item:hover {
+    background-color: #f0f0f0;
+}
+
+.select-address {
+    margin-top: 10px;
+    background-color: #ebe9eb;
+    color: #515151;
+}
+
+.select-address:hover {
+    background-color: #dad8da;
+}
+
+/* Date picker customization */
+.ggt-delivery-date-field {
+    cursor: pointer;
+    background-color: #f9f9f9 !important;
+}
+
+.ui-datepicker {
+    width: 300px;
+    padding: 10px;
+    display: none;
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    z-index: 9999 !important;
+}
+
+.ui-datepicker .ui-datepicker-header {
+    position: relative;
+    padding: 5px 0;
+    background-color: #f7f7f7;
+    border-radius: 3px;
+}
+
+.ui-datepicker .ui-datepicker-prev, 
+.ui-datepicker .ui-datepicker-next {
+    position: absolute;
+    top: 5px;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.ui-datepicker .ui-datepicker-prev {
+    left: 5px;
+}
+
+.ui-datepicker .ui-datepicker-next {
+    right: 5px;
+}
+
+.ui-datepicker .ui-datepicker-title {
+    margin: 0 20px;
+    text-align: center;
+}
+
+.ui-datepicker .ui-datepicker-calendar {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ui-datepicker th {
+    padding: 7px 0;
+    text-align: center;
+    font-weight: bold;
+    border: 0;
+}
+
+.ui-datepicker td {
+    border: 0;
+    padding: 1px;
+    text-align: center;
+}
+
+.ui-datepicker td span, 
+.ui-datepicker td a {
+    display: block;
+    padding: 5px;
+    text-align: center;
+    text-decoration: none;
+}
+
+.ui-datepicker .ui-state-disabled span {
+    color: #ccc;
+}
+
+.ui-datepicker .ui-state-active {
+    background-color: #2271b1;
+    color: #fff;
+    border-radius: 3px;
+}
+
+.uk-holiday .ui-state-default {
+    background-color: #ffeeee;
+    color: #cc0000;
+}
