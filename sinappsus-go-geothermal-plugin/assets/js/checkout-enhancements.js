@@ -255,8 +255,31 @@
             },
             success: function(response) {
                 pricingFetched = true;
-                if (response.success && response.data && response.data.prices) {
-                    updateCartPrices(response.data.prices);
+                console.log('🔄 [GGT] Pricing response:', response);
+                
+                // Check multiple possible paths to find pricing data
+                let prices = null;
+                
+                if (response.success && response.data) {
+                    if (response.data.response && response.data.response.prices) {
+                        prices = response.data.response.prices;
+                        console.log('✅ [GGT] Found prices in response.data.response.prices');
+                    } else if (response.data.results && response.data.results.prices) { 
+                        prices = response.data.results.prices;
+                        console.log('✅ [GGT] Found prices in response.data.results.prices');
+                    } else if (response.data.prices) {
+                        prices = response.data.prices;
+                        console.log('✅ [GGT] Found prices in response.data.prices');
+                    } else {
+                        console.log('⚠️ [GGT] No prices found in response structure');
+                    }
+                    
+                    if (prices) {
+                        console.log('✅ [GGT] Found ' + prices.length + ' custom prices');
+                        updateCartPrices(prices);
+                    } else {
+                        console.log('⚠️ [GGT] No custom pricing found in response structure:', response.data);
+                    }
                 } else {
                     console.log('⚠️ [GGT] No custom pricing found or error occurred:', response);
                 }
@@ -367,9 +390,13 @@
             },
             success: function(response) {
                 console.log('🔄 [GGT] Delivery addresses response:', response);
-                if (response.success && response.data.addresses) {
-                    displayDeliveryAddresses(response.data.addresses);
+                
+                // The results array directly contains the addresses, not results.addresses
+                if (response.success && response.data && response.data.results) {
+                    console.log('✅ [GGT] Found ' + response.data.results.length + ' delivery addresses');
+                    displayDeliveryAddresses(response.data.results);
                 } else {
+                    console.error('❌ [GGT] Could not find delivery addresses in response:', response);
                     alert('No delivery addresses found for your account.');
                 }
             },

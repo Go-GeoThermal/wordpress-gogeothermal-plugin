@@ -246,6 +246,12 @@ class GGT_Checkout_Enhancements {
             return;
         }
         
+        // Log the structure to help with debugging
+        $this->logger->info('Delivery address API response structure: ' . print_r(array_keys($data), true), array('source' => 'ggt-checkout'));
+        if (isset($data['results'])) {
+            $this->logger->info('Found ' . count($data['results']) . ' delivery addresses', array('source' => 'ggt-checkout'));
+        }
+        
         wp_send_json_success($data);
     }
     

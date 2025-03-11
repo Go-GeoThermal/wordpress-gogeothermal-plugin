@@ -150,6 +150,15 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
 
         $user_id = $order->get_user_id();
         $user_meta = get_user_meta($user_id);
+        
+        // Format delivery date to ensure consistent API format
+        $formatted_delivery_date = $delivery_date ? date('Y-m-d', strtotime($delivery_date)) : null;
+
+        // Log the delivery date we're sending
+        $this->logger->info(
+            sprintf('Credit payment - sending order #%d with delivery date: %s', $order->get_id(), $formatted_delivery_date ?: 'not set'), 
+            ['source' => 'geo-credit']
+        );
 
         $order_data = array(
             'order_id'    => $order->get_id(),
@@ -160,7 +169,7 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             'shipping'    => $order->get_address('shipping'),
             'user_meta'   => $user_meta, // Include user meta data
             'items'       => array(),
-            'delivery_date' => $delivery_date, // Include the delivery date
+            'delivery_date' => $formatted_delivery_date, // Include the delivery date in consistent format
         );
 
         foreach ($order->get_items() as $item_id => $item) {

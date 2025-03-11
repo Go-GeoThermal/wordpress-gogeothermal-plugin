@@ -154,54 +154,110 @@ function ggt_validate_delivery_date() {
     // UK public holidays check would be here if we had a programmatic way to check
 }
 
-// Save the custom field value to order meta data
+// Save the custom field value to order meta data with better logging
 add_action('woocommerce_checkout_update_order_meta', 'ggt_save_delivery_date_field');
 function ggt_save_delivery_date_field($order_id) {
     if (!empty($_POST['ggt_delivery_date'])) {
-        update_post_meta($order_id, 'ggt_delivery_date', sanitize_text_field($_POST['ggt_delivery_date']));
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+        update_post_meta($order_id, 'ggt_delivery_date', $delivery_date);
+        
+        // Log successful saving for debugging
+        wc_get_logger()->info(
+            sprintf('Saved delivery date "%s" for order #%d', $delivery_date, $order_id),
+            ['source' => 'ggt-delivery']
+        );
+    } else {
+        wc_get_logger()->error(
+            sprintf('No delivery date provided for order #%d', $order_id),
+            ['source' => 'ggt-delivery']
+        );
     }
 }
 
-// Display the delivery date in admin order page
+// Display the delivery date in admin order page (enhanced)
 add_action('woocommerce_admin_order_data_after_billing_address', 'ggt_display_delivery_date_in_admin');
 function ggt_display_delivery_date_in_admin($order) {
     $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
     if ($delivery_date) {
-        echo '<p><strong>' . __('Delivery Date') . ':</strong> ' . date_i18n(get_option('date_format'), strtotime($delivery_date)) . '</p>';
+        $formatted_date = date_i18n(get_option('date_format'), strtotime($delivery_date));
+        echo '<div class="order_data_column" style="clear:both; margin-top:15px; padding:10px; background:#f8f8f8; border:1px solid #e5e5e5;">';
+        echo '<h4>' . __('Delivery Details', 'woocommerce') . '</h4>';
+        echo '<p><strong>' . __('Delivery Date') . ':</strong> ' . $formatted_date . ' <span style="color:#888;">(' . $delivery_date . ')</span></p>';
+        echo '</div>';
+    } else {
+        echo '<div class="order_data_column" style="clear:both; margin-top:15px; padding:10px; background:#fff8e5; border:1px solid #f0e4d0;">';
+        echo '<h4>' . __('Delivery Details', 'woocommerce') . '</h4>';
+        echo '<p><strong>' . __('Delivery Date') . ':</strong> <span style="color:#b32d2e;">Not specified</span></p>';
+        echo '</div>';
     }
 }
 
-// Send order to API on order creation
+// Display delivery date on customer order page and emails (enhanced)
+add_action('woocommerce_order_details_after_order_table', 'ggt_display_delivery_date_on_order_details');
+add_action('woocommerce_email_order_meta', 'ggt_display_delivery_date_on_order_details');
+function ggt_display_delivery_date_on_order_details($order) {
+    $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
+    if ($delivery_date) {
+        $formatted_date = date_i18n(get_option('date_format'), strtotime($delivery_date));
+        echo '<div class="ggt-delivery-date-display">';
+        echo '<h2>' . __('Delivery Date', 'woocommerce') . '</h2>';
+        echo '<p><strong>' . $formatted_date . '</strong></p>';
+        echo '</div>';
+    }
+}
+
+// Also display in order details meta section
+add_action('woocommerce_order_details_before_order_table', 'ggt_display_delivery_date_before_order_table');
+function ggt_display_delivery_date_before_order_table($order) {
+    // Display prominently at the top of the order details
+    $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
+    if ($delivery_date) {
+        $formatted_date = date_i18n(get_option('date_format'), strtotime($delivery_date));
+        echo '<div class="ggt-delivery-summary">';
+        echo '<p>' . __('Your order is scheduled for delivery on', 'woocommerce') . ' <strong>' . $formatted_date . '</strong></p>';
+        echo '</div>';
+    }
+}
+
+// Add delivery date to order emails
+add_filter('woocommerce_email_order_meta_fields', 'ggt_add_delivery_date_to_emails', 10, 3);
+function ggt_add_delivery_date_to_emails($fields, $sent_to_admin, $order) {
+    $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
+    if ($delivery_date) {
+        $fields['ggt_delivery_date'] = array(
+            'label' => __('Delivery Date', 'woocommerce'),
+            'value' => date_i18n(get_option('date_format'), strtotime($delivery_date)),
+        );
+    }
+    return $fields;
+}
+
+// Send order to API on order creation with better logging
 add_action('woocommerce_checkout_order_processed', 'ggt_send_order_to_api', 10, 1);
 function ggt_send_order_to_api($order_id) {
     $order = wc_get_order($order_id);
     $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
+    
+    // Log that we're sending the order with delivery date
+    wc_get_logger()->info(
+        sprintf('Sending order #%d to API with delivery date: %s', $order_id, $delivery_date ?: 'not set'), 
+        ['source' => 'ggt-api']
+    );
+    
     $response = ggt_send_order_to_api_endpoint($order, $delivery_date);
 
     if (is_wp_error($response)) {
-        wc_get_logger()->error('Failed to send order to API: ' . $response->get_error_message(), ['source' => 'geo-credit']);
-    }
-}
-
-// Update transaction status on payment complete
-add_action('woocommerce_payment_complete', 'ggt_update_transaction_status', 10, 1);
-function ggt_update_transaction_status($order_id) {
-    $order = wc_get_order($order_id);
-    $response = ggt_update_order_status_in_api($order, 'paid');
-
-    if (is_wp_error($response)) {
-        wc_get_logger()->error('Failed to update transaction status to paid: ' . $response->get_error_message(), ['source' => 'geo-credit']);
-    }
-}
-
-// Update transaction status on payment failure
-add_action('woocommerce_order_status_failed', 'ggt_update_transaction_status_failed', 10, 1);
-function ggt_update_transaction_status_failed($order_id) {
-    $order = wc_get_order($order_id);
-    $response = ggt_update_order_status_in_api($order, 'failed');
-
-    if (is_wp_error($response)) {
-        wc_get_logger()->error('Failed to update transaction status to failed: ' . $response->get_error_message(), ['source' => 'geo-credit']);
+        wc_get_logger()->error(
+            sprintf('Failed to send order #%d to API: %s', $order_id, $response->get_error_message()), 
+            ['source' => 'ggt-api']
+        );
+    } else {
+        $response_code = wp_remote_retrieve_response_code($response);
+        $response_body = wp_remote_retrieve_body($response);
+        wc_get_logger()->info(
+            sprintf('API response for order #%d: Code %d, Body: %s', $order_id, $response_code, $response_body), 
+            ['source' => 'ggt-api']
+        );
     }
 }
 
@@ -216,6 +272,9 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
 
     $user_id = $order->get_user_id();
     $user_meta = get_user_meta($user_id);
+    
+    // Format delivery date to ensure consistent API format
+    $formatted_delivery_date = $delivery_date ? date('Y-m-d', strtotime($delivery_date)) : null;
 
     $order_data = array(
         'order_id'    => $order->get_id(),
@@ -226,7 +285,17 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         'shipping'    => $order->get_address('shipping'),
         'user_meta'   => $user_meta, // Include user meta data
         'items'       => array(),
-        'delivery_date' => $delivery_date, // Include the delivery date
+        'delivery_date' => $formatted_delivery_date, // Include the delivery date in consistent format
+    );
+
+    // Log the data we're sending to the API
+    wc_get_logger()->info(
+        sprintf('Order data for API (order #%d): %s', $order->get_id(), json_encode([
+            'delivery_date' => $formatted_delivery_date,
+            'total' => $order->get_total(),
+            'payment_method' => $order->get_payment_method()
+        ])),
+        ['source' => 'ggt-api']
     );
 
     foreach ($order->get_items() as $item_id => $item) {
@@ -285,6 +354,28 @@ function ggt_update_order_status_in_api($order, $status) {
     ));
 
     return $response;
+}
+
+// Update transaction status on payment complete
+add_action('woocommerce_payment_complete', 'ggt_update_transaction_status', 10, 1);
+function ggt_update_transaction_status($order_id) {
+    $order = wc_get_order($order_id);
+    $response = ggt_update_order_status_in_api($order, 'paid');
+
+    if (is_wp_error($response)) {
+        wc_get_logger()->error('Failed to update transaction status to paid: ' . $response->get_error_message(), ['source' => 'geo-credit']);
+    }
+}
+
+// Update transaction status on payment failure
+add_action('woocommerce_order_status_failed', 'ggt_update_transaction_status_failed', 10, 1);
+function ggt_update_transaction_status_failed($order_id) {
+    $order = wc_get_order($order_id);
+    $response = ggt_update_order_status_in_api($order, 'failed');
+
+    if (is_wp_error($response)) {
+        wc_get_logger()->error('Failed to update transaction status to failed: ' . $response->get_error_message(), ['source' => 'geo-credit']);
+    }
 }
 
 // Load payment gateway
