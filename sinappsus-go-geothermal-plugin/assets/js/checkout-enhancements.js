@@ -1,218 +1,202 @@
 (function($) {
     'use strict';
     
-    // Flag to track initialization status
-    var isInitialized = false;
-    var datePickerAttempts = 0;
-    var maxAttempts = 5;
-    var customPricingComplete = false;
-    var lastAjaxRequest = 0;
+    // Define variables to track state
+    let pricingFetched = false;
+    let isInitialized = false;
     
     // Initialize when document is ready
     $(document).ready(function() {
         if ($('body').hasClass('woocommerce-checkout')) {
-            initCheckoutEnhancements();
-            
-            // Try once more after a delay
-            setTimeout(function() {
-                // Only run this delayed initialization if the datepicker isn't found
-                if (!$('#ggt_delivery_date').length) {
-                    createDeliveryDateField();
-                }
-            }, 1500);
+            // Add a delay to allow other scripts to complete
+            setTimeout(initializeCheckout, 1000);
         }
     });
     
-    // More selective AJAX handler - only for specific WooCommerce events
+    // Use a backup initialization with a longer delay
+    setTimeout(function() {
+        if ($('body').hasClass('woocommerce-checkout') && !isInitialized) {
+            console.log('🔄 [GGT] Running late initialization (backup)');
+            initializeCheckout();
+        }
+    }, 2500);
+    
+    // Listen for checkout updates
     $(document.body).on('updated_checkout', function() {
+        console.log('🔄 [GGT] Checkout updated, reinitializing date field');
         if (!$('#ggt_delivery_date').length) {
             createDeliveryDateField();
         }
         initDeliveryDatePicker();
     });
     
-    // Prevent too frequent Ajax reinitializations
-    $(document).ajaxComplete(function(event, xhr, settings) {
-        // Only process if it's a WooCommerce checkout update and not too frequent
-        if (settings.url && settings.url.indexOf('wc-ajax=update_order_review') > -1) {
-            var now = new Date().getTime();
-            if (now - lastAjaxRequest > 2000) { // At least 2 seconds between reinits
-                lastAjaxRequest = now;
-                if ($('body').hasClass('woocommerce-checkout')) {
-                    // Only attempt date picker initialization, not everything
-                    if (!$('#ggt_delivery_date').length) {
-                        createDeliveryDateField();
-                    } else {
-                        initDeliveryDatePicker();
-                    }
-                }
-            }
-        }
-    });
-    
-    function initCheckoutEnhancements() {
+    function initializeCheckout() {
         if (isInitialized) return;
+        isInitialized = true;
         
         console.log('🔄 [GGT] Initializing checkout enhancements...');
         
-        // Set the initialization flag
-        isInitialized = true;
+        // Check which target elements are available using more robust selectors
+        const paymentSection = $('.woocommerce-checkout-payment, #payment, [id*="payment"]').first();
+        const orderReview = $('.woocommerce-checkout-review-order, #order_review').first();
+        const checkoutForm = $('form.checkout, .woocommerce-checkout, form[name="checkout"]').first();
         
+        console.log('🔍 [GGT] Payment div exists:', paymentSection.length > 0);
+        console.log('🔍 [GGT] Order review exists:', orderReview.length > 0);
+        console.log('🔍 [GGT] Checkout form exists:', checkoutForm.length > 0);
+        
+        // Run primary functions
         fetchCustomerPricing();
         setupDeliveryAddressSelector();
-        
-        // Create the delivery date field if it doesn't exist
-        if (!$('#ggt_delivery_date').length) {
-            createDeliveryDateField();
-        } else {
-            initDeliveryDatePicker();
-        }
+        createDeliveryDateField();
     }
     
-    // Create the delivery date field directly in JS if PHP hooks failed
     function createDeliveryDateField() {
-        // Only try a limited number of times
-        if (datePickerAttempts >= maxAttempts) return;
-        datePickerAttempts++;
+        // Don't create if it already exists
+        if ($('#ggt_delivery_date').length) {
+            console.log('✅ [GGT] Delivery date field already exists');
+            initDeliveryDatePicker();
+            return;
+        }
         
-        console.log('🔄 [GGT] Attempting to create delivery date field... (attempt ' + datePickerAttempts + ')');
+        console.log('🔄 [GGT] Creating delivery date field...');
         
-        // Try to find appropriate placement targets
-        const $orderReview = $('#order_review');
-        const $paymentMethods = $('#payment');
-        const $additionalFields = $('.woocommerce-additional-fields');
-        const $orderNotes = $('.woocommerce-additional-fields__field-wrapper');
-        
-        // Create our date field HTML
-        const dateFieldHtml = `
-            <div id="ggt_delivery_date_field" class="ggt-delivery-date-wrapper">
+        // Simple HTML for the date field
+        var dateFieldHtml = `
+            <div id="ggt_delivery_date_field" class="form-row form-row-wide" style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; background: #f8f8f8;">
                 <h3>Desired Delivery Date</h3>
-                <p class="form-row form-row-wide">
-                    Please select your preferred delivery date. Note: Deliveries are not available on weekends, UK public holidays, or within 2 business days from today.
-                </p>
-                <p class="form-row form-row-wide">
-                    <label for="ggt_delivery_date">Select your desired delivery date</label>
-                    <input type="text" class="input-text form-row-wide ggt-delivery-date-field" name="ggt_delivery_date" id="ggt_delivery_date" placeholder="Click to select a date" autocomplete="off" readonly="readonly" data-is-datefield="true" required>
-                </p>
+                <p>Please select your preferred delivery date. Note: Deliveries are not available on weekends, UK public holidays, or within 2 business days from today.</p>
+                <label for="ggt_delivery_date">Select your desired delivery date <abbr class="required" title="required">*</abbr></label>
+                <input type="text" class="input-text" name="ggt_delivery_date" id="ggt_delivery_date" placeholder="Click to select a date" required readonly>
             </div>
         `;
         
-        // Try different insertion points based on available elements
-        if ($additionalFields.length) {
-            // Add before additional fields if they exist
-            $additionalFields.before(dateFieldHtml);
-        } else if ($paymentMethods.length) {
-            // Add before payment methods if the additional fields don't exist
-            $paymentMethods.before(dateFieldHtml);
-        } else if ($orderReview.length) {
-            // Fallback to adding at the top of order review
-            $orderReview.prepend(dateFieldHtml);
-        } else {
-            // Last resort - try to add it to the checkout form
-            $('form.checkout').append(dateFieldHtml);
+        // Use more broad selectors to find insertion points
+        var inserted = false;
+        
+        // Expanded list of potential insertion points
+        var targets = [
+            $('.woocommerce-checkout-payment'),
+            $('#payment'),
+            $('[id*="payment"]').first(),
+            $('.woocommerce-checkout-review-order'),
+            $('#order_review'),
+            $('[id*="order_review"]').first(),
+            $('.woocommerce-billing-details'),
+            $('.woocommerce-billing-fields'),
+            $('[id*="billing"]').first(),
+            $('.place-order'),
+            $('#place_order').parent(),
+            $('.woocommerce-checkout'),
+            $('form.checkout'),
+            $('form[name="checkout"]')
+        ];
+        
+        // Try each target for insertion
+        $.each(targets, function(i, $target) {
+            if (!inserted && $target && $target.length) {
+                console.log('🔄 [GGT] Trying insertion at target #' + i);
+                
+                if (i <= 5) {
+                    // For payment and review order sections, insert before
+                    $target.before(dateFieldHtml);
+                } else {
+                    // For other targets like billing, insert after
+                    $target.after(dateFieldHtml);
+                }
+                
+                inserted = $('#ggt_delivery_date').length > 0;
+                if (inserted) {
+                    console.log('✅ [GGT] Successfully inserted date field at target #' + i);
+                    return false; // Break out of loop
+                }
+            }
+        });
+        
+        // If still not inserted, try direct DOM insertion
+        if (!inserted) {
+            console.log('🔄 [GGT] Trying direct DOM insertion');
+            
+            var checkoutForm = document.querySelector('form.checkout, .woocommerce-checkout, form[name="checkout"]');
+            if (checkoutForm) {
+                var divContainer = document.createElement('div');
+                divContainer.innerHTML = dateFieldHtml;
+                checkoutForm.appendChild(divContainer);
+                
+                inserted = $('#ggt_delivery_date').length > 0;
+                if (inserted) console.log('✅ [GGT] Added date field using direct DOM insertion');
+            }
         }
         
-        // If we added the field, initialize the datepicker
-        if ($('#ggt_delivery_date').length) {
-            console.log('✅ [GGT] Successfully created delivery date field');
+        // If we successfully added the field, initialize the datepicker
+        if (inserted) {
             initDeliveryDatePicker();
         } else {
-            console.log('❌ [GGT] Failed to create delivery date field');
+            console.log('❌ [GGT] All insertion methods failed');
         }
     }
     
-    // Initialize delivery date picker if jQuery UI is available
     function initDeliveryDatePicker() {
-        // Check if jQuery UI is available
-        if (typeof $.fn.datepicker !== 'function') {
-            console.error('❌ [GGT] jQuery UI Datepicker not available');
-            return;
-        }
-        
-        // Look for the field with multiple possible selectors
-        const $dateField = $('#ggt_delivery_date, [name="ggt_delivery_date"]').first();
+        var $dateField = $('#ggt_delivery_date');
         
         if (!$dateField.length) {
-            // Don't log this every time to reduce spam
             return;
         }
         
-        // Don't initialize twice
+        // Don't re-initialize
         if ($dateField.hasClass('hasDatepicker')) {
             return;
         }
         
         console.log('🔄 [GGT] Setting up delivery date picker...');
         
-        // UK public holidays
-        const ukHolidays = getUKHolidays();
-        
         try {
-            // Initialize the date picker
+            var ukHolidays = [
+                // 2023 UK Holidays
+                '2023-01-02', '2023-04-07', '2023-04-10', '2023-05-01', '2023-05-29', 
+                '2023-08-28', '2023-12-25', '2023-12-26',
+                // 2024 UK Holidays
+                '2024-01-01', '2024-03-29', '2024-04-01', '2024-05-06', '2024-05-27', 
+                '2024-08-26', '2024-12-25', '2024-12-26'
+            ];
+            
             $dateField.datepicker({
                 dateFormat: 'yy-mm-dd',
-                minDate: '+2d', // Minimum 2 days from today
-                maxDate: '+6m', // Maximum 6 months ahead
+                minDate: '+2d',
+                maxDate: '+6m',
                 beforeShowDay: function(date) {
                     // Check if it's a weekend
-                    const day = date.getDay();
-                    if (day === 0 || day === 6) { // Sunday or Saturday
+                    var day = date.getDay();
+                    if (day === 0 || day === 6) {
                         return [false, '', 'No deliveries on weekends'];
                     }
                     
                     // Check if it's a UK public holiday
-                    const dateString = $.datepicker.formatDate('yy-mm-dd', date);
-                    if (ukHolidays.includes(dateString)) {
+                    var dateString = $.datepicker.formatDate('yy-mm-dd', date);
+                    if ($.inArray(dateString, ukHolidays) !== -1) {
                         return [false, 'uk-holiday', 'No deliveries on UK public holidays'];
                     }
                     
-                    // Valid delivery date
                     return [true, '', ''];
                 }
             });
             
-            // Add click handler to show datepicker
-            $dateField.off('click.ggtDate').on('click.ggtDate', function() {
+            $dateField.on('click', function() {
                 $(this).datepicker('show');
             });
             
-            console.log('✅ [GGT] Delivery date picker initialized successfully');
+            console.log('✅ [GGT] Date picker initialized');
         } catch (e) {
             console.error('❌ [GGT] Error initializing datepicker:', e);
         }
     }
     
-    // UK Holidays list
-    function getUKHolidays() {
-        return [
-            // 2023 UK Holidays
-            '2023-01-02', // New Year's Day (observed)
-            '2023-04-07', // Good Friday
-            '2023-04-10', // Easter Monday
-            '2023-05-01', // Early May Bank Holiday
-            '2023-05-29', // Spring Bank Holiday
-            '2023-08-28', // Summer Bank Holiday
-            '2023-12-25', // Christmas Day
-            '2023-12-26', // Boxing Day
-            
-            // 2024 UK Holidays
-            '2024-01-01', // New Year's Day
-            '2024-03-29', // Good Friday
-            '2024-04-01', // Easter Monday
-            '2024-05-06', // Early May Bank Holiday
-            '2024-05-27', // Spring Bank Holiday
-            '2024-08-26', // Summer Bank Holiday
-            '2024-12-25', // Christmas Day
-            '2024-12-26', // Boxing Day
-        ];
-    }
-    
     function fetchCustomerPricing() {
-        if (customPricingComplete) return;
+        if (pricingFetched) return;
         
         if (!ggt_checkout_data || !ggt_checkout_data.account_ref) {
             console.log('⚠️ [GGT] No customer account reference found.');
-            customPricingComplete = true;
+            pricingFetched = true;
             return;
         }
         
@@ -227,7 +211,7 @@
                 account_ref: ggt_checkout_data.account_ref
             },
             success: function(response) {
-                customPricingComplete = true;
+                pricingFetched = true;
                 if (response.success && response.data && response.data.prices) {
                     updateCartPrices(response.data.prices);
                 } else {
@@ -235,7 +219,7 @@
                 }
             },
             error: function(xhr, status, error) {
-                customPricingComplete = true;
+                pricingFetched = true;
                 console.error('❌ [GGT] Error fetching pricing data:', error);
             }
         });

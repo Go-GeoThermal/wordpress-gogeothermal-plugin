@@ -10,8 +10,8 @@ class GGT_Checkout_Enhancements {
     public function __construct() {
         $this->logger = wc_get_logger();
         
-        // Enqueue scripts for checkout with higher priority to ensure it loads early
-        add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'), 20);
+        // Enqueue scripts earlier to ensure they're loaded before other scripts
+        add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'), 5);
         
         // Register AJAX handlers
         add_action('wp_ajax_ggt_fetch_customer_pricing', array($this, 'ajax_fetch_customer_pricing'));
@@ -29,67 +29,53 @@ class GGT_Checkout_Enhancements {
     
     public function enqueue_scripts() {
         if (is_checkout()) {
-            // Make sure jQuery and jQuery UI are loaded with specified versions
+            // Force load jQuery and jQuery UI with earliest priority
             wp_enqueue_script('jquery');
             wp_enqueue_script('jquery-ui-core');
             wp_enqueue_script('jquery-ui-datepicker');
             
-            // jQuery UI styling - make sure it loads with a proper handle
+            // jQuery UI styling with a direct protocol-relative URL
             wp_enqueue_style(
-                'jquery-ui-for-ggt',  // Changed handle to avoid conflicts
+                'jquery-ui-style',
                 '//code.jquery.com/ui/1.13.2/themes/smoothness/jquery-ui.css',
                 array(),
                 '1.13.2'
             );
             
-            // Deregister delivery date picker if it exists to prevent conflicts
-            if (wp_script_is('ggt-delivery-date-picker', 'registered')) {
-                wp_deregister_script('ggt-delivery-date-picker');
-            }
+            // Use a timestamp to break cache
+            $version = time();
             
-            // Add version timestamp to bust cache
-            $js_version = filemtime(dirname(__FILE__, 2) . '/assets/js/checkout-enhancements.js');
-            $css_version = filemtime(dirname(__FILE__, 2) . '/assets/css/checkout-enhancements.css');
-            
-            // Load our custom checkout enhancements script with proper dependencies
+            // Load checkout enhancements script last to ensure it can access UI elements
             wp_enqueue_script(
                 'ggt-checkout-enhancements',
                 plugins_url('sinappsus-go-geothermal-plugin/assets/js/checkout-enhancements.js', dirname(__FILE__, 2)),
-                array('jquery', 'jquery-ui-datepicker'),
-                $js_version,
-                true
+                array('jquery', 'jquery-ui-core', 'jquery-ui-datepicker'),
+                $version,
+                true // Load in footer
             );
             
-            // Load the custom CSS
+            // Load CSS for the checkout enhancements
             wp_enqueue_style(
                 'ggt-checkout-enhancements-css',
                 plugins_url('sinappsus-go-geothermal-plugin/assets/css/checkout-enhancements.css', dirname(__FILE__, 2)),
-                array('jquery-ui-for-ggt'),  // Make sure our CSS loads after jQuery UI CSS
-                $css_version
+                array('jquery-ui-style'),
+                $version
             );
             
-            // Debug jQuery UI availability
-            wp_add_inline_script('ggt-checkout-enhancements', '
-                console.log("jQuery UI Status Check:");
-                console.log("- jQuery version: " + jQuery.fn.jquery);
-                console.log("- jQuery UI Datepicker available: " + (typeof jQuery.fn.datepicker === "function"));
-                console.log("- Datepicker field exists: " + (jQuery("#ggt_delivery_date").length > 0));
-            ');
+            // Add a debug script to check jQuery UI
+            wp_add_inline_script('jquery-ui-datepicker', '
+                console.log("[GGT DEBUG] jQuery UI Datepicker loaded: " + (typeof jQuery.fn.datepicker === "function"));
+            ', 'after');
             
-            // Get the currently logged-in user's account reference
+            // Get customer account reference
             $account_ref = '';
             if (is_user_logged_in()) {
                 $user_id = get_current_user_id();
                 $account_ref = get_user_meta($user_id, 'accountRef', true);
                 if (!$account_ref) {
-                    $account_ref = get_user_meta($user_id, 'account_ref', true); // Check alternative key
+                    $account_ref = get_user_meta($user_id, 'account_ref', true);
                 }
             }
-            
-            // Log information for debugging
-            $this->logger->info('Enqueuing checkout enhancements script with account ref: ' . $account_ref, 
-                array('source' => 'ggt-checkout')
-            );
             
             // Localize script with data needed for AJAX calls
             wp_localize_script('ggt-checkout-enhancements', 'ggt_checkout_data', array(
