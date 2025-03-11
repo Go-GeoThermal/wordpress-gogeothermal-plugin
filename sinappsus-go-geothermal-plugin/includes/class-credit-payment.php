@@ -212,53 +212,106 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         $user_id = $order->get_user_id();
         $user_meta = get_user_meta($user_id);
         
-        // ENHANCED DEBUGGING - log all meta
-        $all_meta = get_post_meta($order->get_id());
-        $relevant_meta = [];
-        foreach ($all_meta as $key => $values) {
-            if (strpos($key, 'delivery') !== false || strpos($key, 'date') !== false) {
-                $relevant_meta[$key] = $values[0];
-            }
-        }
-        
-        $this->logger->debug(
-            sprintf('Credit payment: Order #%d relevant meta: %s', $order->get_id(), json_encode($relevant_meta)),
-            ['source' => 'geo-credit']
-        );
-        
-        // If no delivery date provided, try multiple sources
-        if (empty($delivery_date)) {
-            $meta_keys_to_try = ['ggt_delivery_date', '_delivery_date', '_ggt_delivery_date', 'delivery_date'];
+        // EVEN MORE aggressive delivery date checking
+        $all_possible_sources = [
+            // Meta keys checked in order of priority
+            'get_meta' => [
+                'ggt_delivery_date',
+                'delivery_date', 
+                '_delivery_date',
+                '_ggt_delivery_date',
+                'ggt_delivery_date_selected'
+            ],
             
-            foreach ($meta_keys_to_try as $key) {
-                $meta_value = get_post_meta($order->get_id(), $key, true);
-                if (!empty($meta_value)) {
-                    $delivery_date = $meta_value;
-                    $this->logger->info(
-                        sprintf('Found delivery date in meta key %s: %s', $key, $delivery_date),
-                        ['source' => 'geo-credit']
-                    );
+            // POST fields checked in order of priority
+            'post' => [
+                'ggt_delivery_date', 
+                'ggt_delivery_date_hidden', 
+                '_delivery_date_backup'
+            ],
+            
+            // Session keys checked in order of priority
+            'session' => [
+                'ggt_validated_delivery_date'
+            ],
+            
+            // Try any other meta keys that might contain "delivery" and "date"
+            'search_meta' => true
+        ];
+        
+        if (empty($delivery_date)) {
+            $this->logger->debug(
+                'Starting AGGRESSIVE delivery date search for order #' . $order->get_id(),
+                ['source' => 'geo-credit']
+            );
+            
+            // Check meta keys
+            foreach ($all_possible_sources['get_meta'] as $key) {
+                $value = $order->get_meta($key);
+                if (!empty($value)) {
+                    $delivery_date = $value;
+                    $this->logger->debug("Found date in order meta key '$key': $value", ['source' => 'geo-credit']);
                     break;
+                }
+            }
+            
+            // Check POST data
+            if (empty($delivery_date)) {
+                foreach ($all_possible_sources['post'] as $key) {
+                    if (!empty($_POST[$key])) {
+                        $delivery_date = sanitize_text_field($_POST[$key]);
+                        $this->logger->debug("Found date in POST field '$key': $delivery_date", ['source' => 'geo-credit']);
+                        break;
+                    }
+                }
+            }
+            
+            // Check session
+            if (empty($delivery_date) && WC()->session) {
+                foreach ($all_possible_sources['session'] as $key) {
+                    $value = WC()->session->get($key);
+                    if (!empty($value)) {
+                        $delivery_date = $value;
+                        $this->logger->debug("Found date in session key '$key': $value", ['source' => 'geo-credit']);
+                        break;
+                    }
+                }
+            }
+            
+            // Search any meta keys containing both "delivery" and "date"
+            if (empty($delivery_date) && $all_possible_sources['search_meta']) {
+                $order_meta = get_post_meta($order->get_id());
+                foreach ($order_meta as $key => $values) {
+                    if (stripos($key, 'delivery') !== false && stripos($key, 'date') !== false) {
+                        $delivery_date = is_array($values) ? reset($values) : $values;
+                        $this->logger->debug("Found date in meta search key '$key': $delivery_date", ['source' => 'geo-credit']);
+                        break;
+                    }
                 }
             }
         }
         
-        // FINAL fallback to order meta if still empty
+        // If still no date, use today + 3 days as fallback
         if (empty($delivery_date)) {
-            $delivery_date = $order->get_meta('ggt_delivery_date');
-            $this->logger->info(
-                sprintf('Fallback delivery date from order meta: %s', $delivery_date ?: 'none'),
+            $delivery_date = date('Y-m-d', strtotime('+3 days'));
+            $this->logger->warning(
+                "NO DELIVERY DATE FOUND - Using fallback date of $delivery_date",
                 ['source' => 'geo-credit']
             );
+            
+            // Save this fallback date to the order
+            $order->update_meta_data('ggt_delivery_date', $delivery_date);
+            $order->update_meta_data('delivery_date', $delivery_date);
+            $order->update_meta_data('ggt_delivery_date_fallback', 'true');
+            $order->save();
         }
-
-        // Log final delivery date, then include it in $order_data
+        
+        // Log final delivery date and prepare API payload
         $this->logger->info(
-            sprintf('Final delivery date for API: %s', $delivery_date ?: 'none'),
+            sprintf('FINAL delivery date for API: %s', $delivery_date),
             ['source' => 'geo-credit']
         );
 
-        // Format delivery date to ensure consistent API format
         $formatted_delivery_date = $delivery_date ? date('Y-m-d', strtotime($delivery_date)) : null;
         
         $this->logger->info(
