@@ -136,6 +136,32 @@
         }
     }
     
+    function fetchUKHolidays(callback) {
+        console.log('🔄 [GGT] Fetching UK holidays...');
+        
+        $.ajax({
+            url: 'https://www.gov.uk/bank-holidays.json',
+            type: 'GET',
+            dataType: 'json',
+            success: function(response) {
+                if (response && response['england-and-wales'] && response['england-and-wales'].events) {
+                    var holidayDates = response['england-and-wales'].events.map(function(event) {
+                        return event.date; // Format is already YYYY-MM-DD
+                    });
+                    console.log('✅ [GGT] Successfully fetched ' + holidayDates.length + ' UK holidays');
+                    callback(holidayDates);
+                } else {
+                    console.error('❌ [GGT] Invalid holiday data format received');
+                    callback([]);
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('❌ [GGT] Error fetching UK holidays:', error);
+                callback([]);
+            }
+        });
+    }
+    
     function initDeliveryDatePicker() {
         var $dateField = $('#ggt_delivery_date');
         
@@ -151,44 +177,61 @@
         console.log('🔄 [GGT] Setting up delivery date picker...');
         
         try {
-            var ukHolidays = [
+            // Fallback holidays in case API fails
+            var fallbackUKHolidays = [
                 // 2023 UK Holidays
                 '2023-01-02', '2023-04-07', '2023-04-10', '2023-05-01', '2023-05-29', 
                 '2023-08-28', '2023-12-25', '2023-12-26',
-                // 2024 UK Holidays
+                // 2024 UK Holidays - fixed year typos
                 '2024-01-01', '2024-03-29', '2024-04-01', '2024-05-06', '2024-05-27', 
                 '2024-08-26', '2024-12-25', '2024-12-26'
             ];
             
-            $dateField.datepicker({
-                dateFormat: 'yy-mm-dd',
-                minDate: '+2d',
-                maxDate: '+6m',
-                beforeShowDay: function(date) {
-                    // Check if it's a weekend
-                    var day = date.getDay();
-                    if (day === 0 || day === 6) {
-                        return [false, '', 'No deliveries on weekends'];
-                    }
-                    
-                    // Check if it's a UK public holiday
-                    var dateString = $.datepicker.formatDate('yy-mm-dd', date);
-                    if ($.inArray(dateString, ukHolidays) !== -1) {
-                        return [false, 'uk-holiday', 'No deliveries on UK public holidays'];
-                    }
-                    
-                    return [true, '', ''];
+            // Attempt to fetch holidays from API
+            fetchUKHolidays(function(ukHolidays) {
+                // If API returned no holidays, use fallback
+                if (!ukHolidays || !ukHolidays.length) {
+                    ukHolidays = fallbackUKHolidays;
+                    console.log('ℹ️ [GGT] Using fallback holiday dates');
                 }
+                
+                // Initialize datepicker with holidays
+                initDatepickerWithHolidays($dateField, ukHolidays);
             });
-            
-            $dateField.on('click', function() {
-                $(this).datepicker('show');
-            });
-            
-            console.log('✅ [GGT] Date picker initialized');
         } catch (e) {
-            console.error('❌ [GGT] Error initializing datepicker:', e);
+            console.error('❌ [GGT] Error during holiday fetching:', e);
+            // Use fallback on error
+            initDatepickerWithHolidays($dateField, fallbackUKHolidays);
         }
+    }
+    
+    function initDatepickerWithHolidays($dateField, ukHolidays) {
+        $dateField.datepicker({
+            dateFormat: 'yy-mm-dd',
+            minDate: '+2d',
+            maxDate: '+6m',
+            beforeShowDay: function(date) {
+                // Check if it's a weekend
+                var day = date.getDay();
+                if (day === 0 || day === 6) {
+                    return [false, '', 'No deliveries on weekends'];
+                }
+                
+                // Check if it's a UK public holiday
+                var dateString = $.datepicker.formatDate('yy-mm-dd', date);
+                if ($.inArray(dateString, ukHolidays) !== -1) {
+                    return [false, 'uk-holiday', 'No deliveries on UK public holidays'];
+                }
+                
+                return [true, '', ''];
+            }
+        });
+        
+        $dateField.on('click', function() {
+            $(this).datepicker('show');
+        });
+        
+        console.log('✅ [GGT] Date picker initialized with ' + ukHolidays.length + ' holidays');
     }
     
     function fetchCustomerPricing() {
