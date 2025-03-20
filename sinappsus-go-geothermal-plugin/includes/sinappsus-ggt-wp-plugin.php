@@ -215,3 +215,19 @@ function ggt_log_order_meta($order_id, $posted_data, $order) {
         );
     }
 }
+
+/**
+ * Get the base API URL based on the selected environment
+ * @return string The base API URL
+ */
+function ggt_get_api_base_url() {
+    global $environments;
+    $selected_env = get_option('ggt_sinappsus_environment', 'production');
+    
+    if (isset($environments[$selected_env]) && isset($environments[$selected_env]['api_url'])) {
+        return $environments[$selected_env]['api_url'];
+    }
+    
+    // Default to production if environment not found
+    return "https://api.gogeothermal.co.uk/api";
+}

@@ -207,7 +207,8 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
 
     private function send_order_to_api($order, $delivery_date) {
         $api_key = $this->get_token();
-        $endpoint = 'https://api.gogeothermal.co.uk/api/sales-orders/wp-new-order';
+        $api_base_url = ggt_get_api_base_url();
+        $endpoint = $api_base_url . '/sales-orders/wp-new-order';
 
         $user_id = $order->get_user_id();
         $user_meta = get_user_meta($user_id);

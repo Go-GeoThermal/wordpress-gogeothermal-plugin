@@ -12,11 +12,16 @@ ini_set('memory_limit', '3048M');
 class Sinappsus_GGT_Admin_UI
 {
     private $api_url;
+    private $environments;
 
     public function __construct()
     {
-        // global $environments;
-        $this->api_url = 'https://api.gogeothermal.co.uk/api'; //$environments['production']['api_url'];
+        global $environments;
+        $this->environments = $environments;
+        
+        // Get selected environment or default to production
+        $selected_env = get_option('ggt_sinappsus_environment', 'production');
+        $this->api_url = $this->environments[$selected_env]['api_url'];
 
         add_action('admin_menu', [$this, 'register_admin_menu']);
         add_filter('plugin_action_links_' . plugin_basename(__FILE__), [$this, 'sinappsus_ggt_wp_plugin']);
@@ -37,8 +42,8 @@ class Sinappsus_GGT_Admin_UI
 
     public function display_settings_page()
     {
-
         $token_exists = get_token() ? true : false;
+        $selected_env = get_option('ggt_sinappsus_environment', 'production');
 ?>
         <div class="wrap">
             <h1>Go Geothermal Settings</h1>
@@ -48,6 +53,16 @@ class Sinappsus_GGT_Admin_UI
                 do_settings_sections('ggt_sinappsus_settings_group');
                 ?>
                 <table class="form-table">
+                    <tr valign="top">
+                        <th scope="row">Environment</th>
+                        <td>
+                            <select name="ggt_sinappsus_environment">
+                                <option value="production" <?php selected($selected_env, 'production'); ?>>Production</option>
+                                <option value="staging" <?php selected($selected_env, 'staging'); ?>>Staging/Testing</option>
+                            </select>
+                            <p class="description">Select the API environment to connect to.</p>
+                        </td>
+                    </tr>
                     <tr valign="top">
                         <th scope="row">Email</th>
                         <td><input type="text" name="ggt_sinappsus_email" value="<?php echo esc_attr(get_option('ggt_sinappsus_email')); ?>" /></td>
@@ -130,40 +145,54 @@ class Sinappsus_GGT_Admin_UI
                 document.getElementById('authenticate-button').addEventListener('click', function() {
                     var email = document.querySelector('input[name="ggt_sinappsus_email"]').value;
                     var password = document.querySelector('input[name="ggt_sinappsus_password"]').value;
+                    var environment = document.querySelector('select[name="ggt_sinappsus_environment"]').value;
 
-                    fetch('<?php echo $this->api_url; ?>/login', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                email: email,
-                                password: password
+                    // First store the environment
+                    jQuery.post(ajaxurl, {
+                        action: 'store_environment',
+                        environment: environment
+                    }, function(response) {
+                        if (response.success) {
+                            // Now authenticate with the API
+                            var apiUrl = environment === 'production' ? 
+                                '<?php echo $this->environments["production"]["api_url"]; ?>' : 
+                                '<?php echo $this->environments["staging"]["api_url"]; ?>';
+                                
+                            fetch(apiUrl + '/login', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    email: email,
+                                    password: password
+                                })
                             })
-                        })
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.access_token) {
-                                // Store the token in the options database
-                                jQuery.post(ajaxurl, {
-                                    action: 'store_token',
-                                    token: data.access_token
-                                }, function(response) {
-                                    if (response.success) {
-                                        document.getElementById('message').innerText = 'Authentication successful!';
-                                        document.getElementById('additional-actions').style.display = 'block';
-                                        document.getElementById('user-actions').style.display = 'block';
-                                    } else {
-                                        document.getElementById('message').innerText = 'Failed to store token!';
-                                    }
-                                });
-                            } else {
-                                document.getElementById('message').innerText = 'Authentication failed!';
-                            }
-                        })
-                        .catch(error => {
-                            document.getElementById('message').innerText = 'An error occurred: ' + error.message;
-                        });
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.access_token) {
+                                    // Store the token in the options database
+                                    jQuery.post(ajaxurl, {
+                                        action: 'store_token',
+                                        token: data.access_token
+                                    }, function(response) {
+                                        if (response.success) {
+                                            document.getElementById('message').innerText = 'Authentication successful!';
+                                            document.getElementById('additional-actions').style.display = 'block';
+                                            document.getElementById('user-actions').style.display = 'block';
+                                        } else {
+                                            document.getElementById('message').innerText = 'Failed to store token!';
+                                        }
+                                    });
+                                } else {
+                                    document.getElementById('message').innerText = 'Authentication failed!';
+                                }
+                            })
+                            .catch(error => {
+                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                            });
+                        }
+                    });
                 });
 
                 document.getElementById('validate-button').addEventListener('click', function() {
@@ -461,6 +490,7 @@ function ggt_sinappsus_register_settings()
     register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_email');
     register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_password');
     register_setting('ggt_sinappsus_settings_group', 'ggt_enable_additional_registration_fields');
+    register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_environment');
 }
 
 add_action('wp_ajax_clear_all_products', 'clear_all_products');
@@ -1249,4 +1279,21 @@ function disabling_emails($args)
 {
     unset($args['to']);
     return $args;
+}
+
+// Add new AJAX handler for the environment
+add_action('wp_ajax_store_environment', 'store_environment');
+function store_environment()
+{
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized', 401);
+    }
+
+    $environment = sanitize_text_field($_POST['environment']);
+    if ($environment !== 'production' && $environment !== 'staging') {
+        $environment = 'production'; // Default to production if invalid
+    }
+    
+    update_option('ggt_sinappsus_environment', $environment);
+    wp_send_json_success();
 }

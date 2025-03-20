@@ -116,8 +116,9 @@ class GGT_Checkout_Enhancements {
         }
         
         // Make API request to get custom pricing
+        $api_base_url = ggt_get_api_base_url();
         $response = wp_remote_get(
-            'https://api.gogeothermal.co.uk/api/customers/' . urlencode($account_ref) . '/pricing',
+            $api_base_url . '/customers/' . urlencode($account_ref) . '/pricing',
             array(
                 'headers' => array(
                     'Authorization' => 'Bearer ' . $token,
@@ -220,8 +221,9 @@ class GGT_Checkout_Enhancements {
         }
         
         // Make API request to get delivery addresses
+        $api_base_url = ggt_get_api_base_url();
         $response = wp_remote_get(
-            'https://api.gogeothermal.co.uk/api/customers/' . urlencode($account_ref) . '/delivery-address',
+            $api_base_url . '/customers/' . urlencode($account_ref) . '/delivery-address',
             array(
                 'headers' => array(
                     'Authorization' => 'Bearer ' . $token,

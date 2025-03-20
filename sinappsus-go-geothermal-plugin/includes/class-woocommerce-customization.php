@@ -446,7 +446,8 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
     wc_get_logger()->debug('STARTING API SEND - Initial delivery date: ' . ($delivery_date ?: 'EMPTY'), ['source' => 'ggt-api']);
     
     $api_key = ggt_get_decrypted_token();
-    $endpoint = 'https://api.gogeothermal.co.uk/api/sales-orders/wp-new-order';
+    $api_base_url = ggt_get_api_base_url();
+    $endpoint = $api_base_url . '/sales-orders/wp-new-order';
     
     // Exclude credit payment method - skip sending
     if ($order->get_payment_method() === 'geo_credit') {
@@ -606,7 +607,8 @@ function ggt_get_decrypted_token() {
 
 function ggt_update_order_status_in_api($order, $status) {
     $api_key = get_option('sinappsus_gogeo_codex');
-    $endpoint = 'https://api.gogeothermal.co.uk/api/sales-orders/wp-update-order-status';
+    $api_base_url = ggt_get_api_base_url();
+    $endpoint = $api_base_url . '/sales-orders/wp-update-order-status';
 
     $order_data = array(
         'order_id' => $order->get_id(),

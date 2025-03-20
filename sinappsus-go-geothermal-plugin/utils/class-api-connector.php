@@ -4,7 +4,10 @@
 function ggt_sinappsus_connect_to_api($endpoint, $data = array(), $method = 'GET') {
     error_log('ggt_sinappsus_connect_to_api() called');
     $account_key = get_option('ggt_sinappsus_jwt_token');
-    $url = GGT_SINAPPSUS_API_URL . $endpoint;
+    
+    // Get the API URL based on selected environment
+    $api_url = ggt_get_api_base_url();
+    $url = $api_url . $endpoint;
 
     // Default args
     $args = array(
@@ -33,4 +36,20 @@ function ggt_sinappsus_connect_to_api($endpoint, $data = array(), $method = 'GET
     }
 
     return json_decode(wp_remote_retrieve_body($response), true);
+}
+
+/**
+ * Get the base API URL based on the selected environment
+ * @return string The base API URL
+ */
+function ggt_get_api_base_url() {
+    global $environments;
+    $selected_env = get_option('ggt_sinappsus_environment', 'production');
+    
+    if (isset($environments[$selected_env]) && isset($environments[$selected_env]['api_url'])) {
+        return $environments[$selected_env]['api_url'];
+    }
+    
+    // Default to production if environment not found
+    return $environments['production']['api_url'];
 }
