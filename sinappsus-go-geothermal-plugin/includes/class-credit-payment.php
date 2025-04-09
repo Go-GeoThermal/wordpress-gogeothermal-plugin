@@ -339,7 +339,7 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         }
         
         $order_data = array(
-            'order_id'       => $order->get_id(),
+            'woocommerce_order_id'       => $order->get_id(),
             'user_id'        => $user_id,
             'total'          => $order->get_total(),
             'currency'       => get_woocommerce_currency(),
@@ -347,6 +347,7 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             'shipping'       => $order->get_address('shipping'),
             'user_meta'      => $user_meta,
             'items'          => array(),
+            'world_pay'     =>  $order->get_payment_method(),
             'delivery_date'  => $formatted_delivery_date,
             'delivery_address' => $delivery_address // Add delivery address data
         );

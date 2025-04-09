@@ -18,7 +18,7 @@ class Sinappsus_GGT_Admin_UI
     {
         global $environments;
         $this->environments = $environments;
-        
+
         // Get selected environment or default to production
         $selected_env = get_option('ggt_sinappsus_environment', 'production');
         $this->api_url = $this->environments[$selected_env]['api_url'];
@@ -91,12 +91,34 @@ class Sinappsus_GGT_Admin_UI
                     <button type="button" id="sync-products-button" class="button button-secondary">Sync All Products</button>
                     <p class="description">This will synchronize all products with the Sage system.</p>
                 </div>
+                <!-- Progress container for sync process -->
+                <div id="sync-progress-container" style="display:none; margin-top: 15px;">
+                    <div class="sync-status-message"></div>
+                    <div class="progress-bar-container" style="height: 20px; background-color: #f0f0f0; border-radius: 3px; margin: 10px 0; overflow: hidden;">
+                        <div class="progress-bar" style="width: 0%; height: 100%; background-color: #0073aa; transition: width 0.3s;"></div>
+                    </div>
+                    <div class="sync-details">
+                        <span class="sync-count">0</span> / <span class="sync-total">0</span> products processed
+                        (<span class="sync-success-count">0</span> updated, <span class="sync-skip-count">0</span> skipped)
+                    </div>
+                </div>
             </div>
             <div id="user-actions" style="display: <?php echo $token_exists ? 'block' : 'none'; ?>">
                 <h2>User Actions</h2>
                 <div class="action-item">
                     <button type="button" id="sync-users-button" class="button button-secondary">Sync All Users</button>
                     <p class="description">This will synchronize all users with the Sage system.</p>
+                </div>
+                <!-- Progress container for user sync process -->
+                <div id="user-sync-progress-container" style="display:none; margin-top: 15px;">
+                    <div class="user-sync-status-message"></div>
+                    <div class="progress-bar-container" style="height: 20px; background-color: #f0f0f0; border-radius: 3px; margin: 10px 0; overflow: hidden;">
+                        <div class="user-progress-bar" style="width: 0%; height: 100%; background-color: #0073aa; transition: width 0.3s;"></div>
+                    </div>
+                    <div class="user-sync-details">
+                        <span class="user-sync-count">0</span> / <span class="user-sync-total">0</span> users processed
+                        (<span class="user-sync-success-count">0</span> updated, <span class="user-sync-error-count">0</span> failed)
+                    </div>
                 </div>
                 <div class="action-item">
                     <button type="button" id="delete-users-button" class="button button-secondary">Delete All Users</button>
@@ -154,43 +176,43 @@ class Sinappsus_GGT_Admin_UI
                     }, function(response) {
                         if (response.success) {
                             // Now authenticate with the API
-                            var apiUrl = environment === 'production' ? 
-                                '<?php echo $this->environments["production"]["api_url"]; ?>' : 
+                            var apiUrl = environment === 'production' ?
+                                '<?php echo $this->environments["production"]["api_url"]; ?>' :
                                 '<?php echo $this->environments["staging"]["api_url"]; ?>';
-                                
+
                             fetch(apiUrl + '/login', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    email: email,
-                                    password: password
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({
+                                        email: email,
+                                        password: password
+                                    })
                                 })
-                            })
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data.access_token) {
-                                    // Store the token in the options database
-                                    jQuery.post(ajaxurl, {
-                                        action: 'store_token',
-                                        token: data.access_token
-                                    }, function(response) {
-                                        if (response.success) {
-                                            document.getElementById('message').innerText = 'Authentication successful!';
-                                            document.getElementById('additional-actions').style.display = 'block';
-                                            document.getElementById('user-actions').style.display = 'block';
-                                        } else {
-                                            document.getElementById('message').innerText = 'Failed to store token!';
-                                        }
-                                    });
-                                } else {
-                                    document.getElementById('message').innerText = 'Authentication failed!';
-                                }
-                            })
-                            .catch(error => {
-                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
-                            });
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.access_token) {
+                                        // Store the token in the options database
+                                        jQuery.post(ajaxurl, {
+                                            action: 'store_token',
+                                            token: data.access_token
+                                        }, function(response) {
+                                            if (response.success) {
+                                                document.getElementById('message').innerText = 'Authentication successful!';
+                                                document.getElementById('additional-actions').style.display = 'block';
+                                                document.getElementById('user-actions').style.display = 'block';
+                                            } else {
+                                                document.getElementById('message').innerText = 'Failed to store token!';
+                                            }
+                                        });
+                                    } else {
+                                        document.getElementById('message').innerText = 'Authentication failed!';
+                                    }
+                                })
+                                .catch(error => {
+                                    document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                                });
                         }
                     });
                 });
@@ -254,7 +276,21 @@ class Sinappsus_GGT_Admin_UI
                 });
 
                 document.getElementById('sync-users-button').addEventListener('click', function() {
+                    // Reset counters and show progress container
+                    let successCount = 0;
+                    let errorCount = 0;
+                    
+                    document.getElementById('message').innerText = 'Initializing user synchronization...';
+                    document.getElementById('user-sync-progress-container').style.display = 'block';
+                    document.querySelector('.user-sync-status-message').innerText = 'Connecting to API...';
+                    document.querySelector('.user-progress-bar').style.width = '0%';
+                    document.querySelector('.user-sync-count').innerText = '0';
+                    document.querySelector('.user-sync-success-count').innerText = '0';
+                    document.querySelector('.user-sync-error-count').innerText = '0';
+
                     getToken().then(token => {
+                        document.querySelector('.user-sync-status-message').innerText = 'Fetching users from API...';
+                        
                         fetch('<?php echo $this->api_url; ?>/customers', {
                                 method: 'GET',
                                 headers: {
@@ -265,29 +301,85 @@ class Sinappsus_GGT_Admin_UI
                             .then(response => response.json())
                             .then(data => {
                                 if (data && Array.isArray(data)) {
-                                    data.forEach(user_data => {
-                                        if (user_data.email) {
-                                            jQuery.post(ajaxurl, {
-                                                action: 'sync_user',
-                                                user_data: user_data
-                                            }, function(response) {
-                                                if (!response.success) {
-                                                    document.getElementById('message').innerText = 'Failed to sync user: ' + user_data.email;
-                                                }
-                                            }).fail(function(error) {
-                                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
-                                            });
+                                    let processed = 0;
+                                    let total = data.length;
+                                    document.querySelector('.user-sync-status-message').innerText = 'Starting synchronization of ' + total + ' users...';
+                                    document.querySelector('.user-sync-total').innerText = total;
+                                    
+                                    // Process each user sequentially to avoid overwhelming the server
+                                    function processNextUser(index) {
+                                        if (index >= data.length) {
+                                            document.querySelector('.user-sync-status-message').innerText = 'Synchronization complete!';
+                                            document.getElementById('message').innerText = 'Users synchronized successfully! Updated: ' + 
+                                                successCount + ', Failed: ' + errorCount;
+                                            
+                                            // Hide the progress container after 20 seconds
+                                            setTimeout(function() {
+                                                document.getElementById('user-sync-progress-container').style.display = 'none';
+                                            }, 20000);
+                                            return;
                                         }
-                                    });
-                                    document.getElementById('message').innerText = 'Users synchronized successfully!';
+
+                                        let user_data = data[index];
+                                        if (!user_data.email) {
+                                            processed++;
+                                            errorCount++;
+                                            document.querySelector('.user-sync-error-count').innerText = errorCount;
+                                            document.querySelector('.user-sync-status-message').innerText = 'Skipping user with no email...';
+                                            updateProgress(processed, total);
+                                            processNextUser(index + 1);
+                                            return;
+                                        }
+
+                                        document.querySelector('.user-sync-status-message').innerText = 'Processing user: ' + user_data.email;
+                                        
+                                        jQuery.post(ajaxurl, {
+                                            action: 'sync_user',
+                                            user_data: user_data
+                                        }, function(response) {
+                                            processed++;
+                                            if (response.success) {
+                                                successCount++;
+                                                document.querySelector('.user-sync-success-count').innerText = successCount;
+                                            } else {
+                                                errorCount++;
+                                                document.querySelector('.user-sync-error-count').innerText = errorCount;
+                                                document.querySelector('.user-sync-status-message').innerText = 'Error with user: ' + user_data.email;
+                                            }
+                                            updateProgress(processed, total);
+                                            processNextUser(index + 1);
+                                        }).fail(function(error) {
+                                            processed++;
+                                            errorCount++;
+                                            document.querySelector('.user-sync-error-count').innerText = errorCount;
+                                            document.querySelector('.user-sync-status-message').innerText = 'Error with user: ' + user_data.email;
+                                            updateProgress(processed, total);
+                                            processNextUser(index + 1);
+                                        });
+                                    }
+
+                                    // Helper function to update progress
+                                    function updateProgress(current, total) {
+                                        const percent = Math.round((current / total) * 100);
+                                        document.querySelector('.user-progress-bar').style.width = percent + '%';
+                                        document.querySelector('.user-sync-count').innerText = current;
+                                        document.getElementById('message').innerText = 'Processed: ' + current + ' of ' + total + 
+                                            ' (' + percent + '%)';
+                                    }
+
+                                    // Start processing users
+                                    processNextUser(0);
                                 } else {
+                                    document.querySelector('.user-sync-status-message').innerText = 'Error: Invalid response from API';
                                     document.getElementById('message').innerText = 'Invalid response from API.';
                                 }
                             })
                             .catch(error => {
+                                document.querySelector('.user-sync-status-message').innerText = 'Error: ' + error.message;
                                 document.getElementById('message').innerText = 'An error occurred: ' + error.message;
                             });
                     }).catch(error => {
+                        document.querySelector('.user-sync-status-message').innerText = 'Authentication error';
                         document.getElementById('message').innerText = 'An error occurred: ' + error;
                     });
                 });
@@ -339,9 +431,21 @@ class Sinappsus_GGT_Admin_UI
                 });
 
                 document.getElementById('sync-products-button').addEventListener('click', function() {
-                    document.getElementById('message').innerText = 'Synchronizing products... This may take a while.';
+                    // Reset counters and show progress container
+                    let successCount = 0;
+                    let skipCount = 0;
+                    
+                    document.getElementById('message').innerText = 'Initializing product synchronization...';
+                    document.getElementById('sync-progress-container').style.display = 'block';
+                    document.querySelector('.sync-status-message').innerText = 'Connecting to API...';
+                    document.querySelector('.progress-bar').style.width = '0%';
+                    document.querySelector('.sync-count').innerText = '0';
+                    document.querySelector('.sync-success-count').innerText = '0';
+                    document.querySelector('.sync-skip-count').innerText = '0';
 
                     getToken().then(token => {
+                        document.querySelector('.sync-status-message').innerText = 'Fetching products from API...';
+                        
                         fetch('<?php echo $this->api_url; ?>/products', {
                                 method: 'GET',
                                 headers: {
@@ -353,76 +457,123 @@ class Sinappsus_GGT_Admin_UI
                             .then(data => {
                                 if (data && Array.isArray(data)) {
                                     // First, get all existing products
+                                    document.querySelector('.sync-status-message').innerText = 'Analyzing existing products...';
+                                    
                                     jQuery.post(ajaxurl, {
                                         action: 'get_all_products'
                                     }).done(function(existingProducts) {
-                                        let existing = {};
+                                        let existingByStockCode = {};
+                                        let existingBySku = {};
                                         if (existingProducts.success && Array.isArray(existingProducts.data)) {
-                                            // Create a lookup map for faster checking - map stockCode to product ID
+                                            // Create lookup maps for faster checking - one for stockCode and one for SKU
                                             existingProducts.data.forEach(product => {
-                                                existing[product.stockCode] = product.id;
+                                                if (product.stockCode) {
+                                                    existingByStockCode[product.stockCode] = product.id;
+                                                }
+                                                if (product.sku) {
+                                                    existingBySku[product.sku] = product.id;
+                                                }
                                             });
                                         }
 
                                         let processed = 0;
                                         let total = data.length;
-                                        document.getElementById('message').innerText = 'Processing ' + total + ' products...';
+                                        document.querySelector('.sync-status-message').innerText = 'Starting synchronization of ' + total + ' products...';
+                                        document.querySelector('.sync-total').innerText = total;
 
                                         // Process each product sequentially to avoid overwhelming the server
                                         function processNextProduct(index) {
                                             if (index >= data.length) {
-                                                document.getElementById('message').innerText = 'Products synchronized successfully! Processed: ' + processed + ' of ' + total;
+                                                document.querySelector('.sync-status-message').innerText = 'Synchronization complete!';
+                                                document.getElementById('message').innerText = 'Products synchronized successfully! Updated: ' + 
+                                                    successCount + ', Skipped: ' + skipCount;
+                                                
+                                                // Hide the progress container after 20 seconds
+                                                setTimeout(function() {
+                                                    document.getElementById('sync-progress-container').style.display = 'none';
+                                                }, 20000);
                                                 return;
                                             }
 
                                             let product_data = data[index];
                                             if (!product_data.stockCode) {
+                                                processed++;
+                                                skipCount++;
+                                                document.querySelector('.sync-skip-count').innerText = skipCount;
+                                                document.querySelector('.sync-status-message').innerText = 'Skipping product with no stock code...';
+                                                updateProgress(processed, total);
                                                 processNextProduct(index + 1);
                                                 return;
                                             }
 
-                                            if (existing[product_data.stockCode]) {
+                                            // Check if the product exists by stockCode or SKU
+                                            let existingProductId = existingByStockCode[product_data.stockCode] ||
+                                                (product_data.sku ? existingBySku[product_data.sku] : null);
+
+                                            if (existingProductId) {
                                                 // Update existing product
+                                                document.querySelector('.sync-status-message').innerText = 'Updating: ' + (product_data.title || product_data.stockCode);
                                                 jQuery.post(ajaxurl, {
                                                     action: 'update_product',
-                                                    product_id: existing[product_data.stockCode],
+                                                    product_id: existingProductId,
                                                     product_data: product_data
                                                 }).always(function() {
                                                     processed++;
-                                                    document.getElementById('message').innerText = 'Processing: ' + processed + ' of ' + total;
+                                                    successCount++;
+                                                    document.querySelector('.sync-success-count').innerText = successCount;
+                                                    updateProgress(processed, total);
                                                     processNextProduct(index + 1);
                                                 });
                                             } else if (product_data.inactiveFlag !== true && product_data.inactiveFlag !== "1") {
                                                 // Only create new product if inactiveFlag is not true or "1"
+                                                document.querySelector('.sync-status-message').innerText = 'Creating: ' + (product_data.title || product_data.stockCode);
                                                 jQuery.post(ajaxurl, {
                                                     action: 'create_product',
                                                     product_data: product_data
                                                 }).always(function() {
                                                     processed++;
-                                                    document.getElementById('message').innerText = 'Processing: ' + processed + ' of ' + total;
+                                                    successCount++;
+                                                    document.querySelector('.sync-success-count').innerText = successCount;
+                                                    updateProgress(processed, total);
                                                     processNextProduct(index + 1);
                                                 });
                                             } else {
                                                 // Skip this product
+                                                document.querySelector('.sync-status-message').innerText = 'Skipping inactive product: ' + (product_data.title || product_data.stockCode);
                                                 processed++;
-                                                document.getElementById('message').innerText = 'Processing: ' + processed + ' of ' + total + ' (skipped inactive product)';
+                                                skipCount++;
+                                                document.querySelector('.sync-skip-count').innerText = skipCount;
+                                                updateProgress(processed, total);
                                                 processNextProduct(index + 1);
                                             }
+                                        }
+
+                                        // Helper function to update progress
+                                        function updateProgress(current, total) {
+                                            const percent = Math.round((current / total) * 100);
+                                            document.querySelector('.progress-bar').style.width = percent + '%';
+                                            document.querySelector('.sync-count').innerText = current;
+                                            document.getElementById('message').innerText = 'Processed: ' + current + ' of ' + total + 
+                                                ' (' + percent + '%)';
                                         }
 
                                         // Start processing products
                                         processNextProduct(0);
                                     }).fail(function(error) {
+                                        document.querySelector('.sync-status-message').innerText = 'Error: Failed to get existing products';
                                         document.getElementById('message').innerText = 'Failed to get existing products: ' + error.message;
                                     });
                                 } else {
+                                    document.querySelector('.sync-status-message').innerText = 'Error: Invalid response from API';
                                     document.getElementById('message').innerText = 'Invalid response from API.';
                                 }
                             })
                             .catch(error => {
+                                document.querySelector('.sync-status-message').innerText = 'Error: ' + error.message;
                                 document.getElementById('message').innerText = 'An error occurred: ' + error.message;
                             });
                     }).catch(error => {
+                        document.querySelector('.sync-status-message').innerText = 'Authentication error';
                         document.getElementById('message').innerText = 'An error occurred: ' + error;
                     });
                 });
@@ -550,6 +701,7 @@ function clear_all_products()
     ]);
 }
 
+
 function get_all_products()
 {
     if (!current_user_can('manage_options')) {
@@ -568,17 +720,53 @@ function get_all_products()
     foreach ($products as $product) {
         $product_obj = wc_get_product($product->ID);
         $stock_code = $product_obj->get_meta('_stockCode');
+        $sku = $product_obj->get_sku();
 
-        // Only include products that have a stockCode
-        if ($stock_code) {
-            $result[] = array(
-                'id' => $product->ID,
-                'stockCode' => $stock_code
-            );
-        }
+        $result[] = array(
+            'id' => $product->ID,
+            'stockCode' => $stock_code,
+            'sku' => $sku
+        );
     }
 
     wp_send_json_success($result);
+}
+
+function create_product()
+{
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized', 401);
+    }
+
+    $product_data = $_POST['product_data'];
+
+    $product = new WC_Product();
+    $product->set_name($product_data['description']);
+    $product->set_regular_price($product_data['salesPrice']);
+    $product->set_description($product_data['description']);
+    $product->set_stock($product_data['qtyInStock']);
+    $product->set_manage_stock(true);
+    $product->set_backorders('yes');
+    
+    // Set the stockCode as meta data
+    $product->update_meta_data('_stockCode', $product_data['stockCode']);
+    
+    // If no SKU is provided, use stockCode as the SKU
+    if (empty($product_data['sku'])) {
+        $product->set_sku($product_data['stockCode']);
+    } else {
+        $product->set_sku($product_data['sku']);
+    }
+
+    // Update other meta data
+    foreach ($product_data as $key => $value) {
+        if ($key !== 'sku' && $key !== 'salesPrice' && $key !== 'description' && $key !== 'stockCode' && $key !== 'sku') {
+            $product->update_meta_data($key, $value);
+        }
+    }
+
+    $product->save();
+    wp_send_json_success();
 }
 
 function update_product()
@@ -592,7 +780,7 @@ function update_product()
 
     $product = wc_get_product($product_id);
     if ($product) {
-        $product->set_name($product_data['title']);
+        $product->set_name($product_data['description']);
         $product->set_regular_price($product_data['salesPrice']);
         $product->set_description($product_data['description']);
         $product->update_meta_data('_stockCode', $product_data['stockCode']);
@@ -602,7 +790,7 @@ function update_product()
 
         // Update other meta data
         foreach ($product_data as $key => $value) {
-            if ($key !== 'title' && $key !== 'salesPrice' && $key !== 'description' && $key !== 'stockCode') {
+            if ($key !== 'sku' && $key !== 'salesPrice' && $key !== 'description' && $key !== 'stockCode') {
                 $product->update_meta_data($key, $value);
             }
         }
@@ -612,35 +800,6 @@ function update_product()
     } else {
         wp_send_json_error('Product not found', 404);
     }
-}
-
-function create_product()
-{
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error('Unauthorized', 401);
-    }
-
-    $product_data = $_POST['product_data'];
-
-    $product = new WC_Product();
-    $product->set_name($product_data['title']);
-    $product->set_regular_price($product_data['salesPrice']);
-    $product->set_description($product_data['description']);
-    $product->set_stock($product_data['qtyInStock']);
-    $product->set_manage_stock(true);
-    $product->set_backorders('yes');
-
-    $product->update_meta_data('_stockCode', $product_data['stockCode']);
-
-    // Update other meta data
-    foreach ($product_data as $key => $value) {
-        if ($key !== 'title' && $key !== 'salesPrice' && $key !== 'description' && $key !== 'stockCode') {
-            $product->update_meta_data($key, $value);
-        }
-    }
-
-    $product->save();
-    wp_send_json_success();
 }
 
 function sync_user()
@@ -1293,7 +1452,7 @@ function store_environment()
     if ($environment !== 'production' && $environment !== 'staging') {
         $environment = 'production'; // Default to production if invalid
     }
-    
+
     update_option('ggt_sinappsus_environment', $environment);
     wp_send_json_success();
 }
