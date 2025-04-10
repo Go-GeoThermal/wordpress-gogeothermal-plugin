@@ -5,8 +5,6 @@ if (!defined('ABSPATH')) {
 }
 
 class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
-    protected $logger;
-
     public function __construct() {
         $this->id = 'geo_credit';
         $this->title = __('Go Geothermal Credit Payment', 'woocommerce');
@@ -14,7 +12,6 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         $this->has_fields = false;
         $this->method_title = __('Go Geothermal Credit Payment', 'woocommerce');
         $this->method_description = __('Allows Go geothermal credit approved users to pay with credit if their credit limit is sufficient.', 'woocommerce');
-        $this->logger = wc_get_logger();
 
         $this->init_form_fields();
         $this->init_settings();
@@ -94,10 +91,6 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             $meta_value = get_post_meta($order_id, $key, true);
             if (!empty($meta_value)) {
                 $delivery_date = $meta_value;
-                $this->logger->info(
-                    sprintf('Found delivery date in meta key %s: %s for order #%d', $key, $delivery_date, $order_id),
-                    ['source' => 'geo-credit']
-                );
                 break;
             }
         }
@@ -123,10 +116,6 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
                 foreach ($meta_keys_to_try as $key) {
                     update_post_meta($order_id, $key, $delivery_date);
                 }
-                $this->logger->info(
-                    sprintf('Saved delivery date from POST data: %s for order #%d', $delivery_date, $order_id),
-                    ['source' => 'geo-credit']
-                );
             }
         }
         
@@ -136,18 +125,6 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             foreach ($meta_keys_to_try as $key) {
                 update_post_meta($order_id, $key, $delivery_date);
             }
-            $this->logger->info(
-                sprintf('Saved delivery date from session: %s for order #%d', $delivery_date, $order_id),
-                ['source' => 'geo-credit']
-            );
-        }
-        
-        // If still no date, log a warning
-        if (empty($delivery_date)) {
-            $this->logger->warning(
-                sprintf('No delivery date found for order #%d', $order_id),
-                ['source' => 'geo-credit']
-            );
         }
 
         // Try different meta keys where credit limit might be stored
@@ -180,11 +157,6 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             }
 
             $response_code = wp_remote_retrieve_response_code($response);
-            $response_body = wp_remote_retrieve_body($response);
-
-            // Log the response for debugging
-            $this->logger->info('API RESPONSE CODE: ' . $response_code);
-            $this->logger->info('API RESPONSE BODY: ' . $response_body);
 
             if ($response_code == 200) {
                 // Mark order as completed
@@ -241,17 +213,11 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         ];
         
         if (empty($delivery_date)) {
-            $this->logger->debug(
-                'Starting AGGRESSIVE delivery date search for order #' . $order->get_id(),
-                ['source' => 'geo-credit']
-            );
-            
             // Check meta keys
             foreach ($all_possible_sources['get_meta'] as $key) {
                 $value = $order->get_meta($key);
                 if (!empty($value)) {
                     $delivery_date = $value;
-                    $this->logger->debug("Found date in order meta key '$key': $value", ['source' => 'geo-credit']);
                     break;
                 }
             }
@@ -261,7 +227,6 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
                 foreach ($all_possible_sources['post'] as $key) {
                     if (!empty($_POST[$key])) {
                         $delivery_date = sanitize_text_field($_POST[$key]);
-                        $this->logger->debug("Found date in POST field '$key': $delivery_date", ['source' => 'geo-credit']);
                         break;
                     }
                 }
@@ -273,7 +238,6 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
                     $value = WC()->session->get($key);
                     if (!empty($value)) {
                         $delivery_date = $value;
-                        $this->logger->debug("Found date in session key '$key': $value", ['source' => 'geo-credit']);
                         break;
                     }
                 }
@@ -285,7 +249,6 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
                 foreach ($order_meta as $key => $values) {
                     if (stripos($key, 'delivery') !== false && stripos($key, 'date') !== false) {
                         $delivery_date = is_array($values) ? reset($values) : $values;
-                        $this->logger->debug("Found date in meta search key '$key': $delivery_date", ['source' => 'geo-credit']);
                         break;
                     }
                 }
@@ -295,10 +258,6 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         // If still no date, use today + 3 days as fallback
         if (empty($delivery_date)) {
             $delivery_date = date('Y-m-d', strtotime('+3 days'));
-            $this->logger->warning(
-                "NO DELIVERY DATE FOUND - Using fallback date of $delivery_date",
-                ['source' => 'geo-credit']
-            );
             
             // Save this fallback date to the order
             $order->update_meta_data('ggt_delivery_date', $delivery_date);
@@ -306,23 +265,8 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             $order->update_meta_data('ggt_delivery_date_fallback', 'true');
             $order->save();
         }
-        
-        // Log final delivery date and prepare API payload
-        $this->logger->info(
-            sprintf('FINAL delivery date for API: %s', $delivery_date),
-            ['source' => 'geo-credit']
-        );
 
         $formatted_delivery_date = $delivery_date ? date('Y-m-d', strtotime($delivery_date)) : null;
-        
-        $this->logger->info(
-            sprintf('Credit payment - sending order #%d with delivery date: %s (original: %s)', 
-                $order->get_id(), 
-                $formatted_delivery_date ?: 'not set', 
-                $delivery_date ?: 'not set'
-            ), 
-            ['source' => 'geo-credit']
-        );
         
         // Look for delivery address information
         $delivery_address = null;
@@ -331,15 +275,11 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             $delivery_address_data = json_decode(stripslashes($delivery_address_json), true);
             if ($delivery_address_data && isset($delivery_address_data['original'])) {
                 $delivery_address = $delivery_address_data['original'];
-                $this->logger->info(
-                    'Found delivery address data in order meta for credit payment',
-                    ['source' => 'geo-credit']
-                );
             }
         }
         
         $order_data = array(
-            'woocommerce_order_id'       => $order->get_id(),
+            'woocommerce_order_id' => $order->get_id(),
             'user_id'        => $user_id,
             'total'          => $order->get_total(),
             'currency'       => get_woocommerce_currency(),
@@ -365,10 +305,12 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             );
         }
 
-        $this->logger->debug(
-            'Prepared order data for API: ' . print_r($order_data, true),
-            ['source' => 'geo-credit']
-        );
+        // Log the API request
+        ggt_log_api_interaction('Credit payment API request', 'info', [
+            'endpoint' => $endpoint,
+            'method' => 'POST', 
+            'payload' => $order_data
+        ]);
 
         $response = wp_remote_post($endpoint, array(
             'method'    => 'POST',
@@ -381,8 +323,23 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             'body'      => json_encode($order_data),
         ));
 
-        // Log the response for debugging
-        $this->logger->info('API RESPONSE: ' . print_r($response, true));
+        // Log the response
+        if (is_wp_error($response)) {
+            ggt_log_api_interaction('Credit payment API response error', 'error', [
+                'endpoint' => $endpoint,
+                'error' => $response->get_error_message()
+            ]);
+        } else {
+            $code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            $body_data = json_decode($body, true);
+            
+            ggt_log_api_interaction('Credit payment API response', 'info', [
+                'endpoint' => $endpoint,
+                'status' => $code,
+                'response' => $body_data ?: $body
+            ]);
+        }
 
         return $response;
     }

@@ -1,0 +1,371 @@
+/**
+ * Order Progress Timeline CSS
+ */
+
+/* Modal Styles - Make selectors more specific */
+body .ggt-modal {
+    display: none;
+    position: fixed;
+    z-index: 99999;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+body.ggt-modal-open {
+    overflow: hidden;
+}
+
+body .ggt-modal .ggt-modal-content {
+    position: relative;
+    background-color: #fff;
+    margin: 10vh auto;
+    padding: 0;
+    border-radius: 5px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 700px;
+    max-height: 80vh;
+    overflow-y: auto;
+    animation: ggtFadeIn 0.3s;
+}
+
+@keyframes ggtFadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+body .ggt-modal .ggt-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid #e5e5e5;
+    background-color: #f8f8f8;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+}
+
+body .ggt-modal .ggt-modal-header h2 {
+    margin: 0;
+    font-size: 1.4em;
+    color: #333;
+}
+
+body .ggt-modal .ggt-modal-close {
+    color: #aaa;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    line-height: 1;
+}
+
+body .ggt-modal .ggt-modal-close:hover {
+    color: #555;
+}
+
+body .ggt-modal .ggt-modal-body {
+    padding: 20px;
+}
+
+/* Loading indicator */
+body .ggt-modal .ggt-loading {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+}
+
+body .ggt-modal .ggt-loading:after {
+    content: "";
+    display: block;
+    width: 40px;
+    height: 40px;
+    margin: 15px auto;
+    border-radius: 50%;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #3498db;
+    animation: ggtSpin 2s linear infinite;
+}
+
+@keyframes ggtSpin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Timeline Styles - Make selectors more specific */
+body .ggt-modal .ggt-order-header {
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+body .ggt-modal .ggt-order-header h3 {
+    font-size: 1.2em;
+    margin-bottom: 10px;
+}
+
+body .ggt-modal .ggt-timeline-intro {
+    color: #666;
+    margin-bottom: 20px;
+}
+
+body .ggt-modal .ggt-timeline {
+    position: relative;
+    margin: 30px 0;
+    padding-left: 30px;
+}
+
+body .ggt-modal .ggt-timeline::before {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 0;
+    height: 100%;
+    width: 2px;
+    background-color: #e0e0e0;
+}
+
+body .ggt-modal .ggt-timeline-item {
+    position: relative;
+    margin-bottom: 25px;
+}
+
+body .ggt-modal .ggt-timeline-marker {
+    position: absolute;
+    left: -30px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: #e0e0e0;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 3px #e0e0e0;
+}
+
+body .ggt-modal .ggt-timeline-content {
+    padding: 10px 15px;
+    background-color: #f9f9f9;
+    border-radius: 4px;
+    border-left: 3px solid #ccc;
+}
+
+body .ggt-modal .ggt-timeline-content h4 {
+    margin-top: 0;
+    margin-bottom: 5px;
+    font-size: 1.1em;
+    color: #333;
+}
+
+body .ggt-modal .ggt-timeline-content time {
+    display: block;
+    font-size: 0.9em;
+    color: #777;
+    margin-bottom: 10px;
+}
+
+body .ggt-modal .ggt-timeline-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+body .ggt-modal .ggt-timeline-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    background-color: #eee;
+    border-radius: 15px;
+    font-size: 0.8em;
+    color: #555;
+}
+
+/* Status-specific styles */
+body .ggt-modal .ggt-status-created .ggt-timeline-marker {
+    background-color: #2196F3;
+    box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.3);
+}
+
+body .ggt-modal .ggt-status-processing .ggt-timeline-marker {
+    background-color: #00BCD4;
+    box-shadow: 0 0 0 3px rgba(0, 188, 212, 0.3);
+}
+
+body .ggt-modal .ggt-status-packed .ggt-timeline-marker {
+    background-color: #009688;
+    box-shadow: 0 0 0 3px rgba(0, 150, 136, 0.3);
+}
+
+body .ggt-modal .ggt-status-ready-shipping .ggt-timeline-marker {
+    background-color: #03A9F4;
+    box-shadow: 0 0 0 3px rgba(3, 169, 244, 0.3);
+}
+
+body .ggt-modal .ggt-status-shipped .ggt-timeline-marker {
+    background-color: #4CAF50;
+    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.3);
+}
+
+body .ggt-modal .ggt-status-delivered .ggt-timeline-marker {
+    background-color: #673AB7;
+    box-shadow: 0 0 0 3px rgba(103, 58, 183, 0.3);
+}
+
+body .ggt-modal .ggt-status-completed .ggt-timeline-marker {
+    background-color: #3F51B5;
+    box-shadow: 0 0 0 3px rgba(63, 81, 181, 0.3);
+}
+
+body .ggt-modal .ggt-status-cancelled .ggt-timeline-marker {
+    background-color: #F44336;
+    box-shadow: 0 0 0 3px rgba(244, 67, 54, 0.3);
+}
+
+body .ggt-modal .ggt-status-hold .ggt-timeline-marker {
+    background-color: #FFC107;
+    box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.3);
+}
+
+body .ggt-modal .ggt-status-returned .ggt-timeline-marker {
+    background-color: #FF9800;
+    box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.3);
+}
+
+body .ggt-modal .ggt-status-refunded .ggt-timeline-marker {
+    background-color: #FF5722;
+    box-shadow: 0 0 0 3px rgba(255, 87, 34, 0.3);
+}
+
+body .ggt-modal .ggt-status-failed .ggt-timeline-marker {
+    background-color: #F44336;
+    box-shadow: 0 0 0 3px rgba(244, 67, 54, 0.3);
+}
+
+body .ggt-modal .ggt-status-unknown .ggt-timeline-marker {
+    background-color: #9E9E9E;
+    box-shadow: 0 0 0 3px rgba(158, 158, 158, 0.3);
+}
+
+/* Color-coded borders for timeline items */
+body .ggt-modal .ggt-status-created .ggt-timeline-content {
+    border-left-color: #2196F3;
+}
+
+body .ggt-modal .ggt-status-processing .ggt-timeline-content {
+    border-left-color: #00BCD4;
+}
+
+body .ggt-modal .ggt-status-packed .ggt-timeline-content {
+    border-left-color: #009688;
+}
+
+body .ggt-modal .ggt-status-ready-shipping .ggt-timeline-content {
+    border-left-color: #03A9F4;
+}
+
+body .ggt-modal .ggt-status-shipped .ggt-timeline-content {
+    border-left-color: #4CAF50;
+}
+
+body .ggt-modal .ggt-status-delivered .ggt-timeline-content {
+    border-left-color: #673AB7;
+}
+
+body .ggt-modal .ggt-status-completed .ggt-timeline-content {
+    border-left-color: #3F51B5;
+}
+
+body .ggt-modal .ggt-status-cancelled .ggt-timeline-content {
+    border-left-color: #F44336;
+}
+
+body .ggt-modal .ggt-status-hold .ggt-timeline-content {
+    border-left-color: #FFC107;
+}
+
+body .ggt-modal .ggt-status-returned .ggt-timeline-content {
+    border-left-color: #FF9800;
+}
+
+body .ggt-modal .ggt-status-refunded .ggt-timeline-content {
+    border-left-color: #FF5722;
+}
+
+body .ggt-modal .ggt-status-failed .ggt-timeline-content {
+    border-left-color: #F44336;
+}
+
+body .ggt-modal .ggt-status-unknown .ggt-timeline-content {
+    border-left-color: #9E9E9E;
+}
+
+/* Button styles */
+body .ggt-modal .ggt-order-progress-button {
+    display: inline-block;
+    padding: 8px 12px;
+    background-color: #f0f0f0;
+    color: #555;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 0.9em;
+    transition: all 0.2s;
+    margin-left: 5px;
+    cursor: pointer;
+}
+
+body .ggt-modal .ggt-order-progress-button:hover {
+    background-color: #e0e0e0;
+    color: #333;
+    border-color: #ccc;
+}
+
+body .ggt-modal .ggt-order-progress-button .dashicons {
+    font-size: 1.1em;
+    width: 1.1em;
+    height: 1.1em;
+    vertical-align: text-bottom;
+    margin-right: 3px;
+}
+
+/* Error message styles */
+body .ggt-modal .ggt-error-message {
+    padding: 20px;
+    background-color: #fff3f3;
+    border-left: 3px solid #f44336;
+    color: #333;
+    text-align: center;
+}
+
+body .ggt-modal .ggt-no-events {
+    text-align: center;
+    color: #666;
+    padding: 20px;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 600px) {
+    body .ggt-modal .ggt-modal-content {
+        width: 95%;
+        margin: 5vh auto;
+    }
+    
+    body .ggt-modal .ggt-timeline {
+        padding-left: 20px;
+    }
+    
+    body .ggt-modal .ggt-timeline-marker {
+        left: -20px;
+        width: 16px;
+        height: 16px;
+    }
+    
+    body .ggt-modal .ggt-timeline-content {
+        padding: 8px 10px;
+    }
+    
+    body .ggt-modal .ggt-timeline-chip {
+        padding: 2px 8px;
+        font-size: 0.75em;
+    }
+}

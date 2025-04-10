@@ -145,7 +145,6 @@ function ggt_validate_delivery_date() {
     // If no date is found in any field, show error
     if (empty($delivery_date)) {
         wc_add_notice(__('Please select a delivery date.'), 'error');
-        wc_get_logger()->error('No delivery date provided during checkout validation', ['source' => 'ggt-delivery']);
         return;
     }
     
@@ -173,11 +172,6 @@ function ggt_validate_delivery_date() {
     
     // Store validated date in session for later use
     WC()->session->set('ggt_validated_delivery_date', $delivery_date);
-    
-    wc_get_logger()->info(
-        sprintf('Delivery date validated successfully: %s', $delivery_date),
-        ['source' => 'ggt-delivery']
-    );
 }
 
 // Remove all previous hooks for saving delivery date to prevent conflicts
@@ -228,19 +222,6 @@ function ggt_improved_save_delivery_date($order_id) {
         if (WC()->session) {
             WC()->session->__unset('ggt_validated_delivery_date');
         }
-        
-        // Add debugging data to confirm date was saved
-        wc_get_logger()->debug(
-            sprintf('Delivery date saved. Verification: Meta now contains: %s', 
-                get_post_meta($order_id, 'ggt_delivery_date', true)
-            ),
-            ['source' => 'ggt-delivery']
-        );
-    } else {
-        wc_get_logger()->error(
-            sprintf('Failed to find delivery date for order #%d in any expected location', $order_id),
-            ['source' => 'ggt-delivery']
-        );
     }
 }
 
@@ -254,23 +235,6 @@ function ggt_capture_delivery_date_early($order, $data) {
         $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
     } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
         $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
-    }
-    
-    // Log what we found
-    if (!empty($delivery_date)) {
-        wc_get_logger()->info(
-            sprintf('Early capture: Found delivery date "%s" for order #%d', $delivery_date, $order->get_id()), 
-            ['source' => 'ggt-delivery']
-        );
-        
-        // Save it to order meta
-        $order->update_meta_data('ggt_delivery_date', $delivery_date);
-        $order->update_meta_data('delivery_date', $delivery_date); // Also add non-prefixed version
-    } else {
-        wc_get_logger()->warning(
-            sprintf('Early capture: No delivery date found for order #%d', $order->get_id()),
-            ['source' => 'ggt-delivery']
-        );
     }
 }
 
@@ -292,11 +256,6 @@ function ggt_add_delivery_date_to_order($order, $data) {
         // Save the delivery date to the order object directly
         $order->update_meta_data('ggt_delivery_date', $delivery_date);
         $order->update_meta_data('_delivery_date', $delivery_date);
-        
-        wc_get_logger()->info(
-            sprintf('Added delivery date "%s" directly to order object #%d', $delivery_date, $order->get_id()),
-            ['source' => 'ggt-delivery']
-        );
     }
 }
 
@@ -325,11 +284,6 @@ function ggt_store_selected_delivery_data($order, $data) {
                     $order->update_meta_data('ggt_delivery_orig_' . $key, sanitize_text_field($value));
                 }
             }
-            
-            wc_get_logger()->info(
-                sprintf('Saved selected delivery address for order #%d', $order->get_id()),
-                ['source' => 'ggt-delivery']
-            );
         }
     }
     
@@ -417,57 +371,29 @@ function ggt_send_order_to_api($order_id) {
     $order = wc_get_order($order_id);
     $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
     
-    // Log that we're sending the order with delivery date
-    wc_get_logger()->info(
-        sprintf('Sending order #%d to API with delivery date: %s', $order_id, $delivery_date ?: 'not set'), 
-        ['source' => 'ggt-api']
-    );
-    
     $response = ggt_send_order_to_api_endpoint($order, $delivery_date);
 
     if (is_wp_error($response)) {
-        wc_get_logger()->error(
-            sprintf('Failed to send order #%d to API: %s', $order_id, $response->get_error_message()), 
-            ['source' => 'ggt-api']
-        );
-    } else {
-        $response_code = wp_remote_retrieve_response_code($response);
-        $response_body = wp_remote_retrieve_body($response);
-        wc_get_logger()->info(
-            sprintf('API response for order #%d: Code %d, Body: %s', $order_id, $response_code, $response_body), 
-            ['source' => 'ggt-api']
-        );
+        ggt_log_api_interaction('Error sending order to API', 'error', [
+            'order_id' => $order_id,
+            'error' => $response->get_error_message()
+        ]);
     }
 }
 
-// Add debug logging to the API function - FIXED: Removed duplicate function
+// Central function to send order to API endpoint with proper logging
 function ggt_send_order_to_api_endpoint($order, $delivery_date) {
-    // Add more aggressive debugging at the start
-    wc_get_logger()->debug('STARTING API SEND - Initial delivery date: ' . ($delivery_date ?: 'EMPTY'), ['source' => 'ggt-api']);
-    
     $api_key = ggt_get_decrypted_token();
     $api_base_url = ggt_get_api_base_url();
     $endpoint = $api_base_url . '/sales-orders/wp-new-order';
     
     // Exclude credit payment method - skip sending
     if ($order->get_payment_method() === 'geo_credit') {
-        wc_get_logger()->info('Skipping API call for geo_credit payment method', ['source' => 'ggt-api']);
         return;
     }
     
     $user_id = $order->get_user_id();
     $user_meta = get_user_meta($user_id);
-    
-    // Dump order meta for debugging
-    $order_meta = get_post_meta($order->get_id());
-    $date_meta = array();
-    foreach ($order_meta as $key => $value) {
-        if (strpos($key, 'date') !== false || strpos($key, 'delivery') !== false) {
-            $date_meta[$key] = $value[0];
-        }
-    }
-    
-    wc_get_logger()->debug('Order date meta: ' . json_encode($date_meta), ['source' => 'ggt-api']);
     
     // If delivery date wasn't passed as a parameter or is empty, try all possible meta keys
     if (empty($delivery_date)) {
@@ -482,10 +408,6 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
             $meta_value = get_post_meta($order->get_id(), $key, true);
             if (!empty($meta_value)) {
                 $delivery_date = $meta_value;
-                wc_get_logger()->info(
-                    sprintf('Found delivery date in meta key %s: %s', $key, $delivery_date),
-                    ['source' => 'ggt-api']
-                );
                 break;
             }
         }
@@ -494,17 +416,6 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
     // Also check the session as a last resort
     if (empty($delivery_date) && WC()->session && WC()->session->get('ggt_validated_delivery_date')) {
         $delivery_date = WC()->session->get('ggt_validated_delivery_date');
-        wc_get_logger()->info(
-            sprintf('Found delivery date in session: %s', $delivery_date),
-            ['source' => 'ggt-api']
-        );
-    }
-    
-    // Right before preparing the API payload, make one final check for the date
-    if (empty($delivery_date)) {
-        // Last desperate attempt - check the order meta directly
-        $delivery_date = $order->get_meta('ggt_delivery_date');
-        wc_get_logger()->debug('Last resort check for date - found: ' . ($delivery_date ?: 'STILL EMPTY'), ['source' => 'ggt-api']);
     }
     
     // Format delivery date to ensure consistent API format
@@ -517,25 +428,11 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         $delivery_address_data = json_decode(stripslashes($delivery_address_json), true);
         if ($delivery_address_data && isset($delivery_address_data['original'])) {
             $delivery_address = $delivery_address_data['original'];
-            wc_get_logger()->info(
-                'Found delivery address data in order meta',
-                ['source' => 'ggt-api']
-            );
         }
     }
     
-    // Log what we're sending to the API
-    wc_get_logger()->info(
-        sprintf('Sending order #%d to API with delivery date: %s (original: %s)',
-            $order->get_id(),
-            $formatted_delivery_date ?: 'null',
-            $delivery_date ?: 'null'
-        ),
-        ['source' => 'ggt-api']
-    );
-    
     $order_data = [
-        'woocommerce_order_id'         => $order->get_id(),
+        'woocommerce_order_id' => $order->get_id(),
         'user_id'          => $user_id,
         'total'            => $order->get_total(),
         'currency'         => get_woocommerce_currency(),
@@ -545,8 +442,7 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         'items'            => [],
         'world_pay'        => $order->get_payment_method(),
         'delivery_date'    => $formatted_delivery_date,
-        'delivery_date_raw' => $delivery_date, // For debugging
-        'delivery_address' => $delivery_address // Add delivery address to the API payload
+        'delivery_address' => $delivery_address
     ];
     
     foreach ($order->get_items() as $item_id => $item) {
@@ -564,10 +460,14 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         ];
     }
     
-    wc_get_logger()->debug(
-        'Order data being sent to API: ' . print_r($order_data, true),
-        ['source' => 'ggt-api']
-    );
+    // Log the API request
+    if (function_exists('ggt_log_api_interaction')) {
+        ggt_log_api_interaction('Request to sales-orders API', 'info', [
+            'endpoint' => $endpoint,
+            'method' => 'POST',
+            'payload' => $order_data
+        ]);
+    }
 
     $response = wp_remote_post($endpoint, [
         'method'    => 'POST',
@@ -580,34 +480,39 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         'body'      => json_encode($order_data),
     ]);
     
-    // Log response
-    if (is_wp_error($response)) {
-        wc_get_logger()->error(
-            sprintf('API error for order #%d: %s', $order->get_id(), $response->get_error_message()),
-            ['source' => 'ggt-api']
-        );
-    } else {
-        $code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        wc_get_logger()->info(
-            sprintf('API response for order #%d: Code %d with body %s', $order->get_id(), $code, $body),
-            ['source' => 'ggt-api']
-        );
+    // Log the response
+    if (function_exists('ggt_log_api_interaction')) {
+        if (is_wp_error($response)) {
+            ggt_log_api_interaction('API Response Error', 'error', [
+                'endpoint' => $endpoint,
+                'error' => $response->get_error_message()
+            ]);
+        } else {
+            $code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            $body_data = json_decode($body, true);
+            
+            ggt_log_api_interaction('API Response', 'info', [
+                'endpoint' => $endpoint,
+                'status' => $code,
+                'response' => $body_data ?: $body
+            ]);
+        }
     }
     
     return $response;
 }
 
-function ggt_get_decrypted_token() {
-    $encrypted_token = get_option('sinappsus_gogeo_codex');
-    if ($encrypted_token) {
-        return openssl_decrypt($encrypted_token, 'aes-256-cbc', AUTH_KEY, 0, AUTH_SALT);
-    }
-    return false;
-}
+// function ggt_get_decrypted_token() {
+//     $encrypted_token = get_option('sinappsus_gogeo_codex');
+//     if ($encrypted_token) {
+//         return openssl_decrypt($encrypted_token, 'aes-256-cbc', AUTH_KEY, 0, AUTH_SALT);
+//     }
+//     return false;
+// }
 
 function ggt_update_order_status_in_api($order, $status) {
-    $api_key = get_option('sinappsus_gogeo_codex');
+    $api_key = ggt_get_decrypted_token();
     $api_base_url = ggt_get_api_base_url();
     $endpoint = $api_base_url . '/sales-orders/wp-update-order-status';
 
@@ -615,6 +520,13 @@ function ggt_update_order_status_in_api($order, $status) {
         'order_id' => $order->get_id(),
         'transaction_status' => $status,
     );
+
+    // Log the API request
+    ggt_log_api_interaction('Update order status request', 'info', [
+        'endpoint' => $endpoint,
+        'method' => 'POST',
+        'payload' => $order_data
+    ]);
 
     $response = wp_remote_post($endpoint, array(
         'method'    => 'POST',
@@ -627,6 +539,24 @@ function ggt_update_order_status_in_api($order, $status) {
         'body'      => json_encode($order_data),
     ));
 
+    // Log the response
+    if (is_wp_error($response)) {
+        ggt_log_api_interaction('Update status API response error', 'error', [
+            'endpoint' => $endpoint,
+            'error' => $response->get_error_message()
+        ]);
+    } else {
+        $code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $body_data = json_decode($body, true);
+        
+        ggt_log_api_interaction('Update status API response', 'info', [
+            'endpoint' => $endpoint,
+            'status' => $code,
+            'response' => $body_data ?: $body
+        ]);
+    }
+
     return $response;
 }
 
@@ -634,28 +564,19 @@ function ggt_update_order_status_in_api($order, $status) {
 add_action('woocommerce_payment_complete', 'ggt_update_transaction_status', 10, 1);
 function ggt_update_transaction_status($order_id) {
     $order = wc_get_order($order_id);
-    $response = ggt_update_order_status_in_api($order, 'paid');
-
-    if (is_wp_error($response)) {
-        wc_get_logger()->error('Failed to update transaction status to paid: ' . $response->get_error_message(), ['source' => 'geo-credit']);
-    }
+    ggt_update_order_status_in_api($order, 'paid');
 }
 
 // Update transaction status on payment failure
 add_action('woocommerce_order_status_failed', 'ggt_update_transaction_status_failed', 10, 1);
 function ggt_update_transaction_status_failed($order_id) {
     $order = wc_get_order($order_id);
-    $response = ggt_update_order_status_in_api($order, 'failed');
-
-    if (is_wp_error($response)) {
-        wc_get_logger()->error('Failed to update transaction status to failed: ' . $response->get_error_message(), ['source' => 'geo-credit']);
-    }
+    ggt_update_order_status_in_api($order, 'failed');
 }
 
 // Load payment gateway
 function ggt_load_credit_gateway() {
     if (class_exists('WC_Payment_Gateway')) {
-        wc_get_logger()->info('Loading credit payment gateway', ['source' => 'geo-credit']);
         require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-credit-payment.php';
     }
 }
@@ -693,11 +614,6 @@ function ggt_ajax_store_delivery_date() {
         $delivery_date = sanitize_text_field($_POST['delivery_date']);
         WC()->session->set('ggt_validated_delivery_date', $delivery_date);
         
-        wc_get_logger()->info(
-            sprintf('AJAX: Stored delivery date in session: %s', $delivery_date),
-            ['source' => 'ggt-delivery']
-        );
-        
         wp_send_json_success(['saved' => true]);
     } else {
         wp_send_json_error(['saved' => false]);
@@ -712,10 +628,6 @@ function ggt_redundant_delivery_date_check() {
     if (empty($_POST['ggt_delivery_date']) && empty($_POST['ggt_delivery_date_hidden']) && !empty($_POST['_delivery_date_backup'])) {
         // Found backup date, copy it to proper fields
         $_POST['ggt_delivery_date_hidden'] = sanitize_text_field($_POST['_delivery_date_backup']);
-        wc_get_logger()->info(
-            sprintf('Using delivery date from backup field: %s', $_POST['_delivery_date_backup']),
-            ['source' => 'ggt-delivery']
-        );
     }
 }
 
@@ -739,15 +651,5 @@ function ggt_emergency_delivery_date_capture($order, $data) {
         // Save it immediately so it doesn't get lost
         $order->update_meta_data('ggt_delivery_date', $delivery_date);
         $order->update_meta_data('delivery_date', $delivery_date);
-        
-        wc_get_logger()->info(
-            sprintf('EMERGENCY: Set delivery date %s on order %s', $delivery_date, $order->get_id()),
-            ['source' => 'ggt-delivery']
-        );
-    } else {
-        wc_get_logger()->warning(
-            sprintf('EMERGENCY: Could not find delivery date for order %s', $order->get_id()),
-            ['source' => 'ggt-delivery']
-        );
     }
 }
