@@ -25,13 +25,8 @@ add_action('woocommerce_blocks_loaded', function() {
         require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/blocks/class-wc-geo-credit-blocks.php';
 
         add_action('woocommerce_blocks_payment_method_type_registration', function($registry) {
-            error_log('Registering geo_credit manually in WooCommerce Blocks');
             $registry->register(new WC_Geo_Credit_Blocks_Support());
         });
-
-        error_log('WooCommerce Blocks API loaded successfully');
-    } else {
-        error_log('WooCommerce Blocks API NOT available');
     }
 });
 
@@ -40,6 +35,9 @@ require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-checkout-enhancements.
 
 // Include woocommerce customization for delivery date and auto passing additional payment methods
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-woocommerce-customization.php';
+
+// Include order progress functionality
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-order-progress.php';
 
 // Make sure the enhanced checkout CSS is loaded one way or another
 add_action('wp_enqueue_scripts', 'ggt_ensure_checkout_styles', 999);
@@ -68,6 +66,28 @@ function ggt_enqueue_delivery_date_script() {
             true
         );
     }
+}
+
+// Make sure rewrite rules are flushed when needed
+register_activation_hook(GGT_SINAPPSUS_PLUGIN_PATH . 'sinappsus-go-geothermal-plugin.php', 'ggt_flush_rewrite_rules_flag');
+function ggt_flush_rewrite_rules_flag() {
+    add_option('ggt_flush_rewrite_rules', true);
+}
+
+/**
+ * Get the base API URL based on the selected environment
+ * @return string The base API URL
+ */
+function ggt_get_api_base_url() {
+    global $environments;
+    $selected_env = get_option('ggt_sinappsus_environment', 'production');
+    
+    if (isset($environments[$selected_env]) && isset($environments[$selected_env]['api_url'])) {
+        return $environments[$selected_env]['api_url'];
+    }
+    
+    // Default to production if environment not found
+    return "https://api.gogeothermal.co.uk/api";
 }
 
 // Add debugging for delivery date and address features
@@ -214,20 +234,4 @@ function ggt_log_order_meta($order_id, $posted_data, $order) {
             ['source' => 'ggt-debug']
         );
     }
-}
-
-/**
- * Get the base API URL based on the selected environment
- * @return string The base API URL
- */
-function ggt_get_api_base_url() {
-    global $environments;
-    $selected_env = get_option('ggt_sinappsus_environment', 'production');
-    
-    if (isset($environments[$selected_env]) && isset($environments[$selected_env]['api_url'])) {
-        return $environments[$selected_env]['api_url'];
-    }
-    
-    // Default to production if environment not found
-    return "https://api.gogeothermal.co.uk/api";
 }

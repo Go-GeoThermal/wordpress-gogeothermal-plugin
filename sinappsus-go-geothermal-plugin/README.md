@@ -22,10 +22,11 @@ general running
 01 on product page, if user has a discount group then show discount price instead
 02 checkout
     01 if user has discount then show prices as normal and apply the discount to the total cart against the specific products
-    02 if user is credit then checkout is all the way 
+    02 if user is credit then checkout is all the way through with credit payment method
     03 if no credit then normal stripe checkout
 03 account
     01 in account with order list they can access another page with status updates
     02 this contains the order status
     03 this also contains the delivery updates
     04 they can turn on and off email notifications in this section
+    05 for completed orders, an "Order Progress" button appears showing real-time shipping and delivery updates

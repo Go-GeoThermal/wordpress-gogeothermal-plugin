@@ -117,8 +117,17 @@ class GGT_Checkout_Enhancements {
         
         // Make API request to get custom pricing
         $api_base_url = ggt_get_api_base_url();
+        $endpoint = $api_base_url . '/customers/' . urlencode($account_ref) . '/pricing';
+
+        // Log the API request
+        ggt_log_api_interaction('Customer pricing API request', 'info', [
+            'endpoint' => $endpoint,
+            'method' => 'GET',
+            'account_ref' => $account_ref
+        ]);
+        
         $response = wp_remote_get(
-            $api_base_url . '/customers/' . urlencode($account_ref) . '/pricing',
+            $endpoint,
             array(
                 'headers' => array(
                     'Authorization' => 'Bearer ' . $token,
@@ -129,7 +138,10 @@ class GGT_Checkout_Enhancements {
         );
         
         if (is_wp_error($response)) {
-            $this->logger->error('Customer pricing API error: ' . $response->get_error_message(), array('source' => 'ggt-checkout'));
+            ggt_log_api_interaction('Customer pricing API error', 'error', [
+                'endpoint' => $endpoint,
+                'error' => $response->get_error_message()
+            ]);
             wp_send_json_error(array('message' => $response->get_error_message()));
             return;
         }
@@ -138,10 +150,20 @@ class GGT_Checkout_Enhancements {
         $data = json_decode($body, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
-            $this->logger->error('Invalid JSON in customer pricing response', array('source' => 'ggt-checkout'));
+            ggt_log_api_interaction('Customer pricing API invalid JSON', 'error', [
+                'endpoint' => $endpoint,
+                'raw_response' => $body
+            ]);
             wp_send_json_error(array('message' => 'Invalid response from API'));
             return;
         }
+
+        // Log the API response
+        ggt_log_api_interaction('Customer pricing API response', 'info', [
+            'endpoint' => $endpoint,
+            'status' => wp_remote_retrieve_response_code($response),
+            'response' => $data
+        ]);
         
         wp_send_json_success($data);
     }
@@ -222,8 +244,17 @@ class GGT_Checkout_Enhancements {
         
         // Make API request to get delivery addresses
         $api_base_url = ggt_get_api_base_url();
+        $endpoint = $api_base_url . '/customers/' . urlencode($account_ref) . '/delivery-address';
+        
+        // Log the API request
+        ggt_log_api_interaction('Delivery addresses API request', 'info', [
+            'endpoint' => $endpoint,
+            'method' => 'GET',
+            'account_ref' => $account_ref
+        ]);
+        
         $response = wp_remote_get(
-            $api_base_url . '/customers/' . urlencode($account_ref) . '/delivery-address',
+            $endpoint,
             array(
                 'headers' => array(
                     'Authorization' => 'Bearer ' . $token,
@@ -234,7 +265,10 @@ class GGT_Checkout_Enhancements {
         );
         
         if (is_wp_error($response)) {
-            $this->logger->error('Delivery address API error: ' . $response->get_error_message(), array('source' => 'ggt-checkout'));
+            ggt_log_api_interaction('Delivery addresses API error', 'error', [
+                'endpoint' => $endpoint,
+                'error' => $response->get_error_message()
+            ]);
             wp_send_json_error(array('message' => $response->get_error_message()));
             return;
         }
@@ -243,16 +277,20 @@ class GGT_Checkout_Enhancements {
         $data = json_decode($body, true);
         
         if (json_last_error() !== JSON_ERROR_NONE) {
-            $this->logger->error('Invalid JSON in delivery address response', array('source' => 'ggt-checkout'));
+            ggt_log_api_interaction('Delivery addresses API invalid JSON', 'error', [
+                'endpoint' => $endpoint,
+                'raw_response' => $body
+            ]);
             wp_send_json_error(array('message' => 'Invalid response from API'));
             return;
         }
         
-        // Log the structure to help with debugging
-        $this->logger->info('Delivery address API response structure: ' . print_r(array_keys($data), true), array('source' => 'ggt-checkout'));
-        if (isset($data['results'])) {
-            $this->logger->info('Found ' . count($data['results']) . ' delivery addresses', array('source' => 'ggt-checkout'));
-        }
+        // Log the API response
+        ggt_log_api_interaction('Delivery addresses API response', 'info', [
+            'endpoint' => $endpoint,
+            'status' => wp_remote_retrieve_response_code($response),
+            'response' => $data
+        ]);
         
         wp_send_json_success($data);
     }
