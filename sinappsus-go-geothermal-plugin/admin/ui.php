@@ -1312,7 +1312,6 @@ function add_custom_registration_fields()
     }
 
     $custom_fields = [
-        'accountRef' => 'Account Reference',
         'name' => 'Name',
         'address1' => 'Address 1',
         'address2' => 'Address 2',
@@ -1339,7 +1338,6 @@ add_action('user_register', 'save_custom_registration_fields');
 function save_custom_registration_fields($user_id)
 {
     $custom_fields = [
-        'accountRef',
         'name',
         'address1',
         'address2',
@@ -1362,6 +1360,11 @@ function save_custom_registration_fields($user_id)
             $user_data[$key] = sanitize_text_field($_POST[$key]);
         }
     }
+    
+    // Ensure primary email is included in API data
+    if (isset($_POST['email'])) {
+        $user_data['email'] = sanitize_email($_POST['email']);
+    }
 
     // Update WooCommerce billing and shipping address fields
     update_user_meta($user_id, 'billing_address_1', sanitize_text_field($_POST['address1']));
@@ -1381,14 +1384,8 @@ function save_custom_registration_fields($user_id)
     update_user_meta($user_id, 'shipping_country', sanitize_text_field($_POST['countryCode']));
     update_user_meta($user_id, 'shipping_phone', sanitize_text_field($_POST['telephone']));
 
-    // Send user data to the API
-    wp_remote_post('https://api.gogeothermal.co.uk/api/customers', [
-        'headers' => [
-            'Authorization' => 'Bearer ' . get_option('sinappsus_gogeo_codex'),
-            'Content-Type' => 'application/json'
-        ],
-        'body' => json_encode($user_data)
-    ]);
+    // Send user data to the API using centralized function
+    ggt_sinappsus_connect_to_api('customers', $user_data, 'POST');
 }
 // END USER PROFILES AND REGISTER
 
@@ -1407,13 +1404,10 @@ function store_token()
     wp_send_json_success();
 }
 
+// Use our centralized function instead of duplicating logic
 function get_token()
 {
-    $encrypted_token = get_option('sinappsus_gogeo_codex');
-    if ($encrypted_token) {
-        return openssl_decrypt($encrypted_token, 'aes-256-cbc', AUTH_KEY, 0, AUTH_SALT);
-    }
-    return false;
+    return ggt_get_decrypted_token();
 }
 
 add_action('wp_ajax_get_token', 'get_token_ajax');
@@ -1423,7 +1417,7 @@ function get_token_ajax()
         wp_send_json_error('Unauthorized', 401);
     }
 
-    $token = get_token();
+    $token = ggt_get_decrypted_token();
     if ($token) {
         wp_send_json_success(['token' => $token]);
     } else {

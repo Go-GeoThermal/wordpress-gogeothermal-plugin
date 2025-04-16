@@ -1,33 +1,132 @@
 <?php 
 
-// Connect to the API
-function ggt_sinappsus_connect_to_api($endpoint, $data = array(), $method = 'GET') {
-    // Get the base URL from the selected environment
-    $url = ggt_get_api_base_url() . '/' . ltrim($endpoint, '/');
-    
-    $args = array(
-        'method'     => $method,
-        'timeout'    => 30,
-        'headers'    => array(
-            'Authorization' => 'Bearer ' . ggt_get_decrypted_token(),
-        ),
-    );
-    
-    if (strtoupper($method) === 'GET') {
-        $args['body'] = $data; 
-    } else {
-        $args['headers']['Content-Type'] = 'application/json';
-        $args['body']                     = json_encode($data);
+/**
+ * Get the decrypted API token
+ * @return string|bool The decrypted token or false if not available
+ */
+if (!function_exists('ggt_get_decrypted_token')) {
+    function ggt_get_decrypted_token() {
+        $encrypted_token = get_option('sinappsus_gogeo_codex');
+        if ($encrypted_token) {
+            return openssl_decrypt($encrypted_token, 'aes-256-cbc', AUTH_KEY, 0, AUTH_SALT);
+        }
+        return false;
     }
+}
 
-    $response = wp_remote_request($url, $args);
-
-    if (is_wp_error($response)) {
-        error_log('API call failed for ' . $url . ': ' . $response->get_error_message());
-        return array('error' => $response->get_error_message());
+/**
+ * Log API interaction for debugging and monitoring
+ * 
+ * @param string $message The message to log
+ * @param string $level The log level (info, error, warning)
+ * @param array $context Additional context information
+ */
+if (!function_exists('ggt_log_api_interaction')) {
+    function ggt_log_api_interaction($message, $level = 'info', $context = []) {
+        if (function_exists('wc_get_logger')) {
+            wc_get_logger()->$level($message, array_merge(['source' => 'ggt-api'], $context));
+        } else {
+            error_log('[GGT API] ' . $message . ' - ' . json_encode($context));
+        }
     }
+}
 
-    return json_decode(wp_remote_retrieve_body($response), true);
+/**
+ * Connect to the Go Geothermal API
+ * 
+ * @param string $endpoint API endpoint (without base URL)
+ * @param array $data Data to send with the request
+ * @param string $method HTTP method (GET, POST, PUT, DELETE)
+ * @param array $additional_headers Additional headers to include
+ * @return array|WP_Error Response data as array or WP_Error on failure
+ */
+if (!function_exists('ggt_sinappsus_connect_to_api')) {
+    function ggt_sinappsus_connect_to_api($endpoint, $data = array(), $method = 'GET', $additional_headers = []) {
+        // Get the base URL from the selected environment
+        $url = ggt_get_api_base_url() . '/' . ltrim($endpoint, '/');
+        
+        // Get authentication token
+        $token = ggt_get_decrypted_token();
+        if (!$token) {
+            ggt_log_api_interaction('API authentication token not available', 'error', ['endpoint' => $endpoint]);
+            return ['error' => 'Authentication token not available'];
+        }
+        
+        // Setup request arguments
+        $headers = array_merge([
+            'Authorization' => 'Bearer ' . $token,
+            'Accept' => 'application/json',
+        ], $additional_headers);
+        
+        $args = array(
+            'method'     => $method,
+            'timeout'    => 30,
+            'headers'    => $headers,
+        );
+        
+        // Process data based on HTTP method
+        if (strtoupper($method) === 'GET') {
+            // For GET requests, add data as query parameters
+            if (!empty($data)) {
+                $url = add_query_arg($data, $url);
+            }
+        } else {
+            // For other methods, encode data as JSON in the body
+            $args['headers']['Content-Type'] = 'application/json';
+            $args['body'] = json_encode($data);
+        }
+
+        // Log the API request
+        ggt_log_api_interaction('API request', 'info', [
+            'endpoint' => $endpoint,
+            'url' => $url,
+            'method' => $method,
+            'data_size' => !empty($data) ? count($data) : 0
+        ]);
+
+        // Execute the request
+        $response = wp_remote_request($url, $args);
+
+        // Handle response
+        if (is_wp_error($response)) {
+            ggt_log_api_interaction('API request failed', 'error', [
+                'endpoint' => $endpoint,
+                'error' => $response->get_error_message()
+            ]);
+            return ['error' => $response->get_error_message()];
+        }
+
+        // Get HTTP status code
+        $status_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        
+        // Try to decode JSON response
+        $decoded_body = json_decode($body, true);
+        
+        // Log the response
+        ggt_log_api_interaction('API response received', 'info', [
+            'endpoint' => $endpoint,
+            'status_code' => $status_code,
+            'success' => ($status_code >= 200 && $status_code < 300)
+        ]);
+
+        // Handle error status codes
+        if ($status_code < 200 || $status_code >= 300) {
+            ggt_log_api_interaction('API error response', 'error', [
+                'endpoint' => $endpoint,
+                'status_code' => $status_code,
+                'response' => $decoded_body ? json_encode($decoded_body) : $body
+            ]);
+            
+            return [
+                'error' => 'API returned error status: ' . $status_code,
+                'status_code' => $status_code,
+                'response' => $decoded_body ? $decoded_body : $body
+            ];
+        }
+
+        return $decoded_body ? $decoded_body : $body;
+    }
 }
 
 /**
@@ -54,93 +153,39 @@ if (!function_exists('ggt_get_api_base_url')) {
  * @param string $order_number The order number to fetch progress for
  * @return array The order progress data or error information
  */
-function ggt_fetch_order_progress($order_number) {
-    // Validate input
-    if (empty($order_number)) {
-        return array('error' => 'Order number is required');
-    }
-    
-    $endpoint = 'integrations/connx/search/by-order/' . urlencode($order_number);
-    
-    // Log the API request attempt
-    if (function_exists('wc_get_logger')) {
-        wc_get_logger()->info('Fetching order progress', [
-            'source' => 'ggt-api',
-            'order_number' => $order_number,
-            'endpoint' => $endpoint
-        ]);
-    }
-    
-    // Use existing API connection function
-    $response = ggt_sinappsus_connect_to_api($endpoint);
-    
-    // Process the response
-    if (isset($response['error'])) {
+if (!function_exists('ggt_fetch_order_progress')) {
+    function ggt_fetch_order_progress($order_number) {
+        // Validate input
+        if (empty($order_number)) {
+            return array('error' => 'Order number is required');
+        }
+        
+        $endpoint = 'integrations/connx/search/by-order/' . urlencode($order_number);
+        
+        // Log the API request attempt
         if (function_exists('wc_get_logger')) {
-            wc_get_logger()->error('Order progress API error', [
+            wc_get_logger()->info('Fetching order progress', [
                 'source' => 'ggt-api',
                 'order_number' => $order_number,
-                'error' => $response['error']
+                'endpoint' => $endpoint
             ]);
         }
+        
+        // Use existing API connection function
+        $response = ggt_sinappsus_connect_to_api($endpoint);
+        
+        // Process the response
+        if (isset($response['error'])) {
+            if (function_exists('wc_get_logger')) {
+                wc_get_logger()->error('Order progress API error', [
+                    'source' => 'ggt-api',
+                    'order_number' => $order_number,
+                    'error' => $response['error']
+                ]);
+            }
+            return $response;
+        }
+        
         return $response;
-    }
-    
-    // Log success
-    if (function_exists('wc_get_logger')) {
-        wc_get_logger()->info('Successfully fetched order progress', [
-            'source' => 'ggt-api',
-            'order_number' => $order_number,
-            'events_count' => is_array($response) ? count($response) : 'not an array'
-        ]);
-    }
-    
-    // If empty response or invalid format
-    if (empty($response) || !is_array($response)) {
-        return array('events' => []);
-    }
-    
-    // Format the response similar to the Vue.js frontend
-    $formatted_events = [];
-    foreach ($response as $event) {
-        $formatted_events[] = [
-            'id' => $event['id'] ?? '',
-            'status' => $event['transactionStatus'] ?? 'unknown',
-            'formattedDate' => isset($event['created_at']) ? date('d M Y H:i', strtotime($event['created_at'])) : '',
-            'courier' => $event['courier'] ?? '',
-            'courierReference' => $event['courierReference'] ?? '',
-            'batch' => $event['batch'] ?? '',
-            'meta' => $event['meta'] ?? null,
-            'created_at' => $event['created_at'] ?? '',
-        ];
-    }
-    
-    return array('events' => $formatted_events);
-}
-
-/**
- * Helper function to decrypt API token
- * @return string|bool Decrypted token or false if not found
- */
-function ggt_get_decrypted_token() {
-    $encrypted_token = get_option('sinappsus_gogeo_codex');
-    if ($encrypted_token) {
-        return openssl_decrypt($encrypted_token, 'aes-256-cbc', AUTH_KEY, 0, AUTH_SALT);
-    }
-    return false;
-}
-
-/**
- * Helper function to log API interactions
- * 
- * @param string $message The log message
- * @param string $level The log level (info, error, etc)
- * @param array $context Additional context data
- */
-function ggt_log_api_interaction($message, $level = 'info', $context = []) {
-    if (function_exists('wc_get_logger')) {
-        wc_get_logger()->log($level, $message, array_merge(['source' => 'ggt-api'], $context));
-    } else {
-        error_log("GGT API [{$level}]: {$message} - " . json_encode($context));
     }
 }

@@ -231,7 +231,7 @@ function ggt_log_order_meta($order_id, $posted_data, $order) {
     } else {
         wc_get_logger()->debug(
             sprintf('Order #%d - No delivery address information found', $order_id),
-            ['source' => 'ggt-debug']
+                ['source' => 'ggt-debug']
         );
     }
 }

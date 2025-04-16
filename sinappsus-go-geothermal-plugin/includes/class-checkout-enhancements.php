@@ -108,64 +108,16 @@ class GGT_Checkout_Enhancements {
             return;
         }
         
-        // Get API token
-        $token = $this->get_api_token();
-        if (!$token) {
-            wp_send_json_error(array('message' => 'API token not available'));
+        // Use the centralized API connector
+        $endpoint = 'customers/' . urlencode($account_ref) . '/pricing';
+        $response = ggt_sinappsus_connect_to_api($endpoint);
+        
+        if (isset($response['error'])) {
+            wp_send_json_error(array('message' => $response['error']));
             return;
         }
         
-        // Make API request to get custom pricing
-        $api_base_url = ggt_get_api_base_url();
-        $endpoint = $api_base_url . '/customers/' . urlencode($account_ref) . '/pricing';
-
-        // Log the API request
-        ggt_log_api_interaction('Customer pricing API request', 'info', [
-            'endpoint' => $endpoint,
-            'method' => 'GET',
-            'account_ref' => $account_ref
-        ]);
-        
-        $response = wp_remote_get(
-            $endpoint,
-            array(
-                'headers' => array(
-                    'Authorization' => 'Bearer ' . $token,
-                    'Accept' => 'application/json'
-                ),
-                'timeout' => 30
-            )
-        );
-        
-        if (is_wp_error($response)) {
-            ggt_log_api_interaction('Customer pricing API error', 'error', [
-                'endpoint' => $endpoint,
-                'error' => $response->get_error_message()
-            ]);
-            wp_send_json_error(array('message' => $response->get_error_message()));
-            return;
-        }
-        
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            ggt_log_api_interaction('Customer pricing API invalid JSON', 'error', [
-                'endpoint' => $endpoint,
-                'raw_response' => $body
-            ]);
-            wp_send_json_error(array('message' => 'Invalid response from API'));
-            return;
-        }
-
-        // Log the API response
-        ggt_log_api_interaction('Customer pricing API response', 'info', [
-            'endpoint' => $endpoint,
-            'status' => wp_remote_retrieve_response_code($response),
-            'response' => $data
-        ]);
-        
-        wp_send_json_success($data);
+        wp_send_json_success($response);
     }
     
     public function ajax_update_cart_prices() {
@@ -235,72 +187,16 @@ class GGT_Checkout_Enhancements {
             return;
         }
         
-        // Get API token
-        $token = $this->get_api_token();
-        if (!$token) {
-            wp_send_json_error(array('message' => 'API token not available'));
+        // Use the centralized API connector
+        $endpoint = 'customers/' . urlencode($account_ref) . '/delivery-address';
+        $response = ggt_sinappsus_connect_to_api($endpoint);
+        
+        if (isset($response['error'])) {
+            wp_send_json_error(array('message' => $response['error']));
             return;
         }
         
-        // Make API request to get delivery addresses
-        $api_base_url = ggt_get_api_base_url();
-        $endpoint = $api_base_url . '/customers/' . urlencode($account_ref) . '/delivery-address';
-        
-        // Log the API request
-        ggt_log_api_interaction('Delivery addresses API request', 'info', [
-            'endpoint' => $endpoint,
-            'method' => 'GET',
-            'account_ref' => $account_ref
-        ]);
-        
-        $response = wp_remote_get(
-            $endpoint,
-            array(
-                'headers' => array(
-                    'Authorization' => 'Bearer ' . $token,
-                    'Accept' => 'application/json'
-                ),
-                'timeout' => 30
-            )
-        );
-        
-        if (is_wp_error($response)) {
-            ggt_log_api_interaction('Delivery addresses API error', 'error', [
-                'endpoint' => $endpoint,
-                'error' => $response->get_error_message()
-            ]);
-            wp_send_json_error(array('message' => $response->get_error_message()));
-            return;
-        }
-        
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            ggt_log_api_interaction('Delivery addresses API invalid JSON', 'error', [
-                'endpoint' => $endpoint,
-                'raw_response' => $body
-            ]);
-            wp_send_json_error(array('message' => 'Invalid response from API'));
-            return;
-        }
-        
-        // Log the API response
-        ggt_log_api_interaction('Delivery addresses API response', 'info', [
-            'endpoint' => $endpoint,
-            'status' => wp_remote_retrieve_response_code($response),
-            'response' => $data
-        ]);
-        
-        wp_send_json_success($data);
-    }
-    
-    private function get_api_token() {
-        $encrypted_token = get_option('sinappsus_gogeo_codex');
-        if ($encrypted_token) {
-            return openssl_decrypt($encrypted_token, 'aes-256-cbc', AUTH_KEY, 0, AUTH_SALT);
-        }
-        return false;
+        wp_send_json_success($response);
     }
 }
 
