@@ -1450,3 +1450,7 @@ function store_environment()
     update_option('ggt_sinappsus_environment', $environment);
     wp_send_json_success();
 }
+
+// WooCommerce Registration Form Integration - reuse existing functions
+add_action('woocommerce_register_form', 'add_custom_registration_fields');
+add_action('woocommerce_created_customer', 'save_custom_registration_fields');

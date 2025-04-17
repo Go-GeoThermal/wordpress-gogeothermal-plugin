@@ -1,13 +1,13 @@
 {
     "name" : "Sinappsus GoGeothermal Official Plugin",
     "slug" : "sinappsus-go-geothermal-plugin",
-    "version" : "0.0.9",
+    "version" : "0.0.10",
     "author"  : "Sinappsus",
     "author_uri" : "https://sinappsus.agency",
     "download_url" : "https://github.com/Go-GeoThermal/wordpress-gogeothermal-plugin/raw/master/sinappsus-go-geothermal-plugin.zip",
     "sections" : {
         "description" : "A custom WordPress plugin to integrate WooCommerce with The Go Geothermal API.",
-        "changelog": "0.0.8 ability to switch between testing and production \n 0.0.7 Added date picker for order delivery and submission/ updating of orders with custom payment status to Go Geothermal as sales orders for all payment methods. Previously, this was only done for credit payments.\n0.0.6 Init"
+        "changelog": "0.0.10 add registration fields to woocommerce register form \n 0.0.8 ability to switch between testing and production \n 0.0.7 Added date picker for order delivery and submission/ updating of orders with custom payment status to Go Geothermal as sales orders for all payment methods. Previously, this was only done for credit payments.\n0.0.6 Init"
     },
     "banners":{
         "low" : "https://storage.sinappsus.us/gogeothermal/banner-772x250.png",
