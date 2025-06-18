@@ -4,11 +4,11 @@ if (!defined('ABSPATH')) {
 }
 $environments = array();
 $environments["staging"] = array(
-    "api_url" => "https://api-staging.gogeothermal.co.uk/api",
+    "api_url" => "https://api-staging.gogeothermal.uk/api",
 );
 
 $environments["production"] = array(
-    "api_url" => "https://api.gogeothermal.co.uk/api",
+    "api_url" => "https://api.gogeothermal.uk/api",
 );
 
 // Define a constant for backwards compatibility
