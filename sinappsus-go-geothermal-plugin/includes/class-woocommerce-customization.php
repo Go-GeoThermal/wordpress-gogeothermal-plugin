@@ -653,3 +653,43 @@ function ggt_emergency_delivery_date_capture($order, $data) {
         $order->update_meta_data('delivery_date', $delivery_date);
     }
 }
+
+// AJAX handler to update user shipping address in database
+add_action('wp_ajax_ggt_update_user_shipping_address', 'ggt_ajax_update_user_shipping_address');
+add_action('wp_ajax_nopriv_ggt_update_user_shipping_address', 'ggt_ajax_update_user_shipping_address');
+
+function ggt_ajax_update_user_shipping_address() {
+    check_ajax_referer('ggt_checkout_nonce', 'nonce');
+    
+    if (!is_user_logged_in()) {
+        wp_send_json_error('User not logged in');
+        return;
+    }
+    
+    $user_id = get_current_user_id();
+    $shipping_address = $_POST['shipping_address'] ?? [];
+    $delivery_info = $_POST['delivery_info'] ?? '';
+    
+    if (empty($shipping_address)) {
+        wp_send_json_error('No shipping address provided');
+        return;
+    }
+    
+    // Update user meta with shipping address fields
+    foreach ($shipping_address as $field => $value) {
+        update_user_meta($user_id, $field, sanitize_text_field($value));
+    }
+    
+    // Also store the delivery info for order processing
+    if (!empty($delivery_info)) {
+        update_user_meta($user_id, 'ggt_selected_delivery_info', $delivery_info);
+    }
+    
+    // Store timestamp of when address was updated
+    update_user_meta($user_id, 'ggt_shipping_address_updated', current_time('mysql'));
+    
+    wp_send_json_success([
+        'message' => 'Shipping address updated successfully',
+        'updated_fields' => array_keys($shipping_address)
+    ]);
+}

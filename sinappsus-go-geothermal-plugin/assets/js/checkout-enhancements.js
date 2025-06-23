@@ -473,107 +473,77 @@
     function selectDeliveryAddress(address) {
         console.log('[GGT] Selecting delivery address:', address);
         
-        // Map the address fields correctly from API response to form fields
+        // Map the address fields correctly from API response to user meta fields
         const mappedAddress = {
-            first_name: $('#billing_first_name').val() || '',
-            last_name: $('#billing_last_name').val() || '',
-            company: address.addressName || '',
-            address_1: address.addressLine1 || '',
-            address_2: address.addressLine2 || '',
-            city: address.addressLine3 || address.town || '',
-            state: address.addressLine4 || address.county || '',
-            postcode: address.postCode || '',
-            country: address.countryCode || 'GB'
+            shipping_first_name: $('#billing_first_name').val() || '',
+            shipping_last_name: $('#billing_last_name').val() || '',
+            shipping_company: address.addressName || '',
+            shipping_address_1: address.addressLine1 || '',
+            shipping_address_2: address.addressLine2 || '',
+            shipping_city: address.addressLine3 || address.town || '',
+            shipping_state: address.addressLine4 || address.county || '',
+            shipping_postcode: address.postCode || '',
+            shipping_country: address.countryCode || 'GB'
         };
         
-        console.log('[GGT] Mapped address fields:', mappedAddress);
+        console.log('[GGT] Updating user shipping address in database:', mappedAddress);
         
-        // Ensure "Ship to different address" is checked
-        const $checkbox = $('#ship-to-different-address-checkbox');
-        if ($checkbox.length && !$checkbox.is(':checked')) {
-            $checkbox.prop('checked', true).trigger('change');
-            // Wait for fields to appear in DOM
-            setTimeout(function() {
-                updateShippingFields(mappedAddress);
-            }, 500);
-        } else {
-            updateShippingFields(mappedAddress);
+        // Show loading message
+        if ($('.woocommerce-message').length === 0) {
+            $('.woocommerce-checkout').prepend(
+                '<div class="woocommerce-message" role="alert">' +
+                'Updating shipping address...' +
+                '</div>'
+            );
         }
         
-        // Store complete address info in hidden field - IMPORTANT: Include original API data too
-        const fullAddressData = {
+        // Send AJAX request to update user's shipping address in database
+        $.ajax({
+            url: ggt_checkout_data.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'ggt_update_user_shipping_address',
+                nonce: ggt_checkout_data.nonce,
+                shipping_address: mappedAddress,
+                delivery_info: JSON.stringify({
+                    mapped: mappedAddress,
+                    original: address
+                })
+            },
+            success: function(response) {
+                console.log('[GGT] Address update response:', response);
+                
+                if (response.success) {
+                    // Update the message
+                    $('.woocommerce-message').text('Shipping address updated! Refreshing checkout...');
+                    
+                    // Wait a moment then refresh the page
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    $('.woocommerce-message').removeClass('woocommerce-message').addClass('woocommerce-error');
+                    $('.woocommerce-error').text('Failed to update shipping address. Please try again.');
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('[GGT] Error updating shipping address:', error);
+                $('.woocommerce-message').removeClass('woocommerce-message').addClass('woocommerce-error');
+                $('.woocommerce-error').text('Error updating shipping address. Please try again.');
+            }
+        });
+        
+        // Store complete address info for order processing
+        storeDeliveryInfo(JSON.stringify({
             mapped: mappedAddress,
             original: address
-        };
-        storeDeliveryInfo(JSON.stringify(fullAddressData));
+        }));
     }
     
     function updateShippingFields(address) {
-        // Update each field with the mapped values
-        $('#shipping_first_name').val(address.first_name).trigger('change');
-        $('#shipping_last_name').val(address.last_name).trigger('change');
-        $('#shipping_company').val(address.company).trigger('change');
-        $('#shipping_address_1').val(address.address_1).trigger('change');
-        $('#shipping_address_2').val(address.address_2).trigger('change');
-        $('#shipping_city').val(address.city).trigger('change');
-        $('#shipping_state').val(address.state).trigger('change');
-        $('#shipping_postcode').val(address.postcode).trigger('change');
-        
-        // Country field often needs special handling
-        const $countryField = $('#shipping_country');
-        if ($countryField.length) {
-            $countryField.val(address.country).trigger('change');
-        }
-        
-        // Some themes use different field IDs - try these too
-        const alternativeFields = {
-            '#shipping_address': address.address_1,
-            '[name="shipping_address"]': address.address_1,
-            '#shipping_city, #shipping_town': address.city,
-            '[name="shipping_city"], [name="shipping_town"]': address.city,
-            '#shipping_state, #shipping_county': address.state,
-            '[name="shipping_state"], [name="shipping_county"]': address.state
-        };
-        
-        // Try to set alternative fields
-        $.each(alternativeFields, function(selector, value) {
-            $(selector).val(value).trigger('change');
-        });
-        
-        // Also store these in sessionStorage for persistence
-        try {
-            sessionStorage.setItem('ggt_shipping_address', JSON.stringify(address));
-        } catch (e) {
-            console.log('⚠️ [GGT] Could not save address to sessionStorage:', e);
-        }
-        
-        // Trigger an update after fields are set
-        setTimeout(function() {
-            $('body').trigger('update_checkout');
-        }, 500);
-        
-        console.log('✅ [GGT] Shipping fields updated with selected address');
-    }
-    
-    function storeDeliveryInfo(deliveryInfo) {
-        // Put selected delivery address in hidden field
-        if (!$('input[name="ggt_delivery_info"]').length) {
-            $('form.checkout').append(
-                '<input type="hidden" name="ggt_delivery_info" value="' + deliveryInfo.replace(/"/g, '&quot;') + '">'
-            );
-        } else {
-            $('input[name="ggt_delivery_info"]').val(deliveryInfo.replace(/"/g, '&quot;'));
-        }
-        
-        // Also store in sessionStorage for persistence
-        try {
-            sessionStorage.setItem('ggt_delivery_info', deliveryInfo);
-            console.log('✅ [GGT] Stored delivery address in sessionStorage');
-        } catch(e) {
-            console.log('⚠️ [GGT] Failed to store address in sessionStorage:', e);
-        }
-        
-        console.log('✅ [GGT] Stored delivery info in hidden field');
+        // This function is no longer needed since we're updating the database directly
+        // Keeping it for compatibility but it won't be called
+        console.log('[GGT] updateShippingFields called but not used - updating database instead');
     }
     
     // Add this at the end of the file to ensure form submission captures the delivery date
