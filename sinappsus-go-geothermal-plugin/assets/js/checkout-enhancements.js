@@ -532,18 +532,27 @@
                 $('.woocommerce-error').text('Error updating shipping address. Please try again.');
             }
         });
-        
-        // Store complete address info for order processing
-        storeDeliveryInfo(JSON.stringify({
-            mapped: mappedAddress,
-            original: address
-        }));
     }
     
-    function updateShippingFields(address) {
-        // This function is no longer needed since we're updating the database directly
-        // Keeping it for compatibility but it won't be called
-        console.log('[GGT] updateShippingFields called but not used - updating database instead');
+    function storeDeliveryInfo(deliveryInfo) {
+        // Put selected delivery address in hidden field
+        if (!$('input[name="ggt_delivery_info"]').length) {
+            $('form.checkout').append(
+                '<input type="hidden" name="ggt_delivery_info" value="' + deliveryInfo.replace(/"/g, '&quot;') + '">'
+            );
+        } else {
+            $('input[name="ggt_delivery_info"]').val(deliveryInfo.replace(/"/g, '&quot;'));
+        }
+        
+        // Also store in sessionStorage for persistence
+        try {
+            sessionStorage.setItem('ggt_delivery_info', deliveryInfo);
+            console.log('✅ [GGT] Stored delivery address in sessionStorage');
+        } catch(e) {
+            console.log('⚠️ [GGT] Failed to store address in sessionStorage:', e);
+        }
+        
+        console.log('✅ [GGT] Stored delivery info in hidden field');
     }
     
     // Add this at the end of the file to ensure form submission captures the delivery date
