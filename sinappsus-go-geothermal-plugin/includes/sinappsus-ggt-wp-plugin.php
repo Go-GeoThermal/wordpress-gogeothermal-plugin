@@ -87,7 +87,7 @@ function ggt_get_api_base_url() {
     }
     
     // Default to production if environment not found
-    return "https://api.gogeothermal.co.uk/api";
+    return "https://api.gogeothermal.uk/api";
 }
 
 // Add debugging for delivery date and address features
