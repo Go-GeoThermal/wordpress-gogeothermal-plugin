@@ -675,9 +675,25 @@ function ggt_ajax_update_user_shipping_address() {
         return;
     }
     
-    // Update user meta with shipping address fields
+    // Update user meta with shipping address fields, including new ones
+    $allowed_fields = [
+        'shipping_first_name',
+        'shipping_last_name', 
+        'shipping_company',
+        'shipping_address_1',
+        'shipping_address_2',
+        'shipping_city',
+        'shipping_state',
+        'shipping_postcode',
+        'shipping_country',
+        'shipping_phone',
+        'shipping_email'
+    ];
+    
     foreach ($shipping_address as $field => $value) {
-        update_user_meta($user_id, $field, sanitize_text_field($value));
+        if (in_array($field, $allowed_fields)) {
+            update_user_meta($user_id, $field, sanitize_text_field($value));
+        }
     }
     
     // Also store the delivery info for order processing

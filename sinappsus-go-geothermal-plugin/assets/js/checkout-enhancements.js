@@ -435,55 +435,32 @@
         });
     }
     
-    function displayDeliveryAddresses(addresses) {
-        const $addressList = $('#ggt-address-list');
-        $addressList.empty();
-        
-        if (addresses.length === 0) {
-            $addressList.html('<p>No saved delivery addresses found.</p>');
-            $('#ggt-delivery-addresses-modal').show();
-            return;
-        }
-        
-        let addressHtml = '<ul class="ggt-address-list">';
-        addresses.forEach(function(address, index) {
-            addressHtml += '<li class="ggt-address-item" data-index="' + index + '">';
-            addressHtml += '<strong>' + (address.addressName || 'Address ' + (index + 1)) + '</strong><br>';
-            addressHtml += address.addressLine1 + '<br>';
-            if (address.addressLine2) addressHtml += address.addressLine2 + '<br>';
-            if (address.addressLine3) addressHtml += address.addressLine3 + '<br>';
-            if (address.addressLine4) addressHtml += address.addressLine4 + '<br>';
-            addressHtml += address.postCode + '<br>';
-            addressHtml += '<button type="button" class="select-address button" data-index="' + index + '">Select</button>';
-            addressHtml += '</li>';
-        });
-        addressHtml += '</ul>';
-        
-        $addressList.html(addressHtml);
-        $('#ggt-delivery-addresses-modal').show();
-        
-        // Handle address selection
-        $('.select-address').on('click', function() {
-            const index = $(this).data('index');
-            selectDeliveryAddress(addresses[index]);
-            $('#ggt-delivery-addresses-modal').hide();
-        });
-    }
-    
     function selectDeliveryAddress(address) {
         console.log('[GGT] Selecting delivery address:', address);
         
+        // Parse contact name for first/last name
+        let firstName = '';
+        let lastName = '';
+        
+        if (address.contact && address.contact.trim()) {
+            const nameParts = address.contact.trim().split(' ');
+            firstName = nameParts[0] || '';
+            lastName = nameParts.slice(1).join(' ') || '';
+        }
+        
         // Map the address fields correctly from API response to user meta fields
         const mappedAddress = {
-            shipping_first_name: $('#billing_first_name').val() || '',
-            shipping_last_name: $('#billing_last_name').val() || '',
-            shipping_company: address.addressName || '',
+            shipping_first_name: firstName,
+            shipping_last_name: lastName,
+            shipping_company: address.name || '', // Use 'name' field for company
             shipping_address_1: address.addressLine1 || '',
             shipping_address_2: address.addressLine2 || '',
-            shipping_city: address.addressLine3 || address.town || '',
-            shipping_state: address.addressLine4 || address.county || '',
-            shipping_postcode: address.postCode || '',
-            shipping_country: address.countryCode || 'GB'
+            shipping_city: address.addressLine3 || '', // City is in addressLine3
+            shipping_state: address.addressLine4 || '', // State/County is in addressLine4
+            shipping_postcode: address.addressLine5 || '', // Postal code is in addressLine5
+            shipping_country: address.countryCode || 'GB',
+            shipping_phone: address.telephone || address.telephone2 || '',
+            shipping_email: address.email || ''
         };
         
         console.log('[GGT] Updating user shipping address in database:', mappedAddress);
@@ -531,6 +508,57 @@
                 $('.woocommerce-message').removeClass('woocommerce-message').addClass('woocommerce-error');
                 $('.woocommerce-error').text('Error updating shipping address. Please try again.');
             }
+        });
+    }
+    
+    function displayDeliveryAddresses(addresses) {
+        const $addressList = $('#ggt-address-list');
+        $addressList.empty();
+        
+        if (addresses.length === 0) {
+            $addressList.html('<p>No saved delivery addresses found.</p>');
+            $('#ggt-delivery-addresses-modal').show();
+            return;
+        }
+        
+        let addressHtml = '<ul class="ggt-address-list">';
+        addresses.forEach(function(address, index) {
+            addressHtml += '<li class="ggt-address-item" data-index="' + index + '">';
+            addressHtml += '<strong>' + (address.name || address.description || 'Address ' + (index + 1)) + '</strong><br>';
+            
+            // Show contact if available
+            if (address.contact) {
+                addressHtml += '<em>Contact: ' + address.contact + '</em><br>';
+            }
+            
+            // Build address display
+            if (address.addressLine1) addressHtml += address.addressLine1 + '<br>';
+            if (address.addressLine2) addressHtml += address.addressLine2 + '<br>';
+            if (address.addressLine3) addressHtml += address.addressLine3 + '<br>';
+            if (address.addressLine4) addressHtml += address.addressLine4 + '<br>';
+            if (address.addressLine5) addressHtml += address.addressLine5 + '<br>';
+            
+            // Show additional contact info if available
+            if (address.telephone) {
+                addressHtml += '<small>Tel: ' + address.telephone + '</small><br>';
+            }
+            if (address.email) {
+                addressHtml += '<small>Email: ' + address.email + '</small><br>';
+            }
+            
+            addressHtml += '<button type="button" class="select-address button" data-index="' + index + '">Select</button>';
+            addressHtml += '</li>';
+        });
+        addressHtml += '</ul>';
+        
+        $addressList.html(addressHtml);
+        $('#ggt-delivery-addresses-modal').show();
+        
+        // Handle address selection
+        $('.select-address').on('click', function() {
+            const index = $(this).data('index');
+            selectDeliveryAddress(addresses[index]);
+            $('#ggt-delivery-addresses-modal').hide();
         });
     }
     
