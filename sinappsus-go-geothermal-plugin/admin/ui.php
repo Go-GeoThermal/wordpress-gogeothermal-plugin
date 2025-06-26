@@ -743,7 +743,11 @@ function create_product()
     $product = new WC_Product();
     $product->set_name($product_data['description']);
     $product->set_regular_price($product_data['salesPrice']);
-    $product->set_description($product_data['description']);
+    
+    // Set description based on webDescription if available, otherwise use description
+    $description = !empty($product_data['webDescription']) ? $product_data['webDescription'] : $product_data['description'];
+    $product->set_description($description);
+    
     $product->set_stock($product_data['qtyInStock']);
     $product->set_manage_stock(true);
     $product->set_backorders('yes');
@@ -758,14 +762,28 @@ function create_product()
         $product->set_sku($product_data['sku']);
     }
 
+    // Handle category assignment
+    if (!empty($product_data['category'])) {
+        $category_id = find_or_create_product_category($product_data['category']);
+        if ($category_id) {
+            $product->set_category_ids(array($category_id));
+        }
+    }
+
     // Update other meta data
     foreach ($product_data as $key => $value) {
-        if ($key !== 'sku' && $key !== 'salesPrice' && $key !== 'description' && $key !== 'stockCode' && $key !== 'sku') {
+        if (!in_array($key, ['sku', 'salesPrice', 'description', 'stockCode', 'category', 'image_url', 'webDescription'])) {
             $product->update_meta_data($key, $value);
         }
     }
 
     $product->save();
+    
+    // Set featured image after product is saved (needs product ID)
+    if (!empty($product_data['image_url'])) {
+        set_product_featured_image_from_url($product->get_id(), $product_data['image_url']);
+    }
+    
     wp_send_json_success();
 }
 
@@ -782,20 +800,38 @@ function update_product()
     if ($product) {
         $product->set_name($product_data['description']);
         $product->set_regular_price($product_data['salesPrice']);
-        $product->set_description($product_data['description']);
+        
+        // Set description based on webDescription if available, otherwise use description
+        $description = !empty($product_data['webDescription']) ? $product_data['webDescription'] : $product_data['description'];
+        $product->set_description($description);
+        
         $product->update_meta_data('_stockCode', $product_data['stockCode']);
         $product->set_stock($product_data['qtyInStock']);
         $product->set_manage_stock(true);
         $product->set_backorders('yes');
 
+        // Handle category assignment
+        if (!empty($product_data['category'])) {
+            $category_id = find_or_create_product_category($product_data['category']);
+            if ($category_id) {
+                $product->set_category_ids(array($category_id));
+            }
+        }
+
         // Update other meta data
         foreach ($product_data as $key => $value) {
-            if ($key !== 'sku' && $key !== 'salesPrice' && $key !== 'description' && $key !== 'stockCode') {
+            if (!in_array($key, ['sku', 'salesPrice', 'description', 'stockCode', 'category', 'image_url', 'webDescription'])) {
                 $product->update_meta_data($key, $value);
             }
         }
 
         $product->save();
+        
+        // Set featured image after product is saved
+        if (!empty($product_data['image_url'])) {
+            set_product_featured_image_from_url($product->get_id(), $product_data['image_url']);
+        }
+        
         wp_send_json_success();
     } else {
         wp_send_json_error('Product not found', 404);
@@ -1454,3 +1490,60 @@ function store_environment()
 // WooCommerce Registration Form Integration - reuse existing functions
 add_action('woocommerce_register_form', 'add_custom_registration_fields');
 add_action('woocommerce_created_customer', 'save_custom_registration_fields');
+
+// Helper function to find or create product category
+function find_or_create_product_category($category_name) {
+    if (empty($category_name)) {
+        return null;
+    }
+    
+    // Search for existing categories with wildcard matching
+    $existing_categories = get_terms(array(
+        'taxonomy' => 'product_cat',
+        'name__like' => $category_name,
+        'hide_empty' => false,
+    ));
+    
+    // If found, return the first match
+    if (!empty($existing_categories)) {
+        return $existing_categories[0]->term_id;
+    }
+    
+    // Create new category if not found
+    $new_category = wp_insert_term(
+        $category_name,
+        'product_cat'
+    );
+    
+    if (is_wp_error($new_category)) {
+        return null;
+    }
+    
+    return $new_category['term_id'];
+}
+
+// Helper function to set featured image from URL
+function set_product_featured_image_from_url($product_id, $image_url) {
+    if (empty($image_url)) {
+        return false;
+    }
+    
+    // Check if the image already exists in media library
+    $attachment_id = attachment_url_to_postid($image_url);
+    
+    if (!$attachment_id) {
+        // Download and import the image
+        require_once(ABSPATH . 'wp-admin/includes/media.php');
+        require_once(ABSPATH . 'wp-admin/includes/file.php');
+        require_once(ABSPATH . 'wp-admin/includes/image.php');
+        
+        $attachment_id = media_sideload_image($image_url, $product_id, null, 'id');
+        
+        if (is_wp_error($attachment_id)) {
+            return false;
+        }
+    }
+    
+    // Set as featured image
+    return set_post_thumbnail($product_id, $attachment_id);
+}
