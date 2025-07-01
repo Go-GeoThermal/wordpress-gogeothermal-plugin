@@ -91,6 +91,7 @@ class Sinappsus_GGT_Admin_UI
                     <button type="button" id="sync-products-button" class="button button-secondary">Sync All Products</button>
                     <p class="description">This will synchronize all products with the Sage system.</p>
                 </div>
+             
                 <!-- Progress container for sync process -->
                 <div id="sync-progress-container" style="display:none; margin-top: 15px;">
                     <div class="sync-status-message"></div>
@@ -578,6 +579,8 @@ class Sinappsus_GGT_Admin_UI
                     });
                 });
 
+              
+
                 // Add this in the document.addEventListener('DOMContentLoaded') function
                 document.getElementById('reset-token-button').addEventListener('click', function() {
                     if (confirm('Are you sure you want to reset the token? You will need to authenticate again.')) {
@@ -636,6 +639,8 @@ class Sinappsus_GGT_Admin_UI
 
 add_action('admin_init', 'ggt_sinappsus_register_settings');
 
+
+
 function ggt_sinappsus_register_settings()
 {
     register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_email');
@@ -661,6 +666,8 @@ function reset_token()
     delete_option('sinappsus_gogeo_codex');
     wp_send_json_success();
 }
+
+
 
 function clear_all_products()
 {
@@ -770,7 +777,7 @@ function create_product()
         }
     }
 
-    // Update other meta data
+    // Update other meta data (including parent_product_id for grouping)
     foreach ($product_data as $key => $value) {
         if (!in_array($key, ['sku', 'salesPrice', 'description', 'stockCode', 'category', 'image_url', 'webDescription'])) {
             $product->update_meta_data($key, $value);
@@ -778,6 +785,9 @@ function create_product()
     }
 
     $product->save();
+    
+    // Handle product grouping after product is saved
+    handle_product_grouping($product->get_id(), $product_data);
     
     // Set featured image after product is saved (needs product ID)
     if (!empty($product_data['image_url'])) {
@@ -818,7 +828,7 @@ function update_product()
             }
         }
 
-        // Update other meta data
+        // Update other meta data (including parent_product_id for grouping)
         foreach ($product_data as $key => $value) {
             if (!in_array($key, ['sku', 'salesPrice', 'description', 'stockCode', 'category', 'image_url', 'webDescription'])) {
                 $product->update_meta_data($key, $value);
@@ -826,6 +836,9 @@ function update_product()
         }
 
         $product->save();
+        
+        // Handle product grouping after product is saved
+        handle_product_grouping($product->get_id(), $product_data);
         
         // Set featured image after product is saved
         if (!empty($product_data['image_url'])) {
@@ -1039,6 +1052,7 @@ function add_custom_fields_to_product()
         'component9Qty' => 'Component 9 Qty',
         'component10Qty' => 'Component 10 Qty',
         'lastDateSynched' => 'Last Date Synched',
+        'parent_product_id' => 'Parent Product ID',
     ];
 
     echo '<div class="options_group">';
@@ -1157,6 +1171,7 @@ function save_custom_fields_to_product($post_id)
         'component9Qty',
         'component10Qty',
         'lastDateSynched',
+        'parent_product_id',
     ];
 
     foreach ($custom_fields as $key) {
@@ -1547,3 +1562,103 @@ function set_product_featured_image_from_url($product_id, $image_url) {
     // Set as featured image
     return set_post_thumbnail($product_id, $attachment_id);
 }
+
+// WooCommerce Grouped Product Functions
+function find_or_create_grouped_product($parent_product_id) {
+    if (empty($parent_product_id)) {
+        return null;
+    }
+    
+    // Search for existing grouped product with this parent_product_id in meta
+    $existing_groups = get_posts(array(
+        'post_type' => 'product',
+        'meta_query' => array(
+            array(
+                'key' => '_parent_product_id',
+                'value' => $parent_product_id,
+                'compare' => '='
+            )
+        ),
+        'post_status' => 'any',
+        'posts_per_page' => 1
+    ));
+    
+    if (!empty($existing_groups)) {
+        $group_product = wc_get_product($existing_groups[0]->ID);
+        // Ensure it's actually a grouped product
+        if ($group_product && $group_product->is_type('grouped')) {
+            return $existing_groups[0]->ID;
+        }
+    }
+    
+    // Create new grouped product
+    $grouped_product = new WC_Product_Grouped();
+    $grouped_product->set_name('Group: ' . $parent_product_id);
+    $grouped_product->set_status('publish');
+    $grouped_product->set_catalog_visibility('visible');
+    
+    // Save the grouped product
+    $group_id = $grouped_product->save();
+    
+    if ($group_id) {
+        // Store the parent_product_id as meta for future reference
+        update_post_meta($group_id, '_parent_product_id', $parent_product_id);
+        return $group_id;
+    }
+    
+    error_log('GGT Plugin: Failed to create grouped product for parent_product_id: ' . $parent_product_id);
+    return null;
+}
+
+function add_product_to_group($product_id, $group_id) {
+    if (!$product_id || !$group_id) {
+        return false;
+    }
+    
+    $grouped_product = wc_get_product($group_id);
+    if (!$grouped_product || !$grouped_product->is_type('grouped')) {
+        error_log('GGT Plugin: Group product not found or not grouped type. Group ID: ' . $group_id);
+        return false;
+    }
+    
+    // Get current children
+    $current_children = $grouped_product->get_children();
+    
+    // Add this product if not already in the group
+    if (!in_array($product_id, $current_children)) {
+        $current_children[] = $product_id;
+        $grouped_product->set_children($current_children);
+        $result = $grouped_product->save();
+        
+        if (!$result) {
+            error_log('GGT Plugin: Failed to save grouped product children for group ID: ' . $group_id);
+            return false;
+        }
+        
+        // Also store the group relationship in the child product's meta
+        update_post_meta($product_id, '_grouped_parent_id', $group_id);
+    }
+    
+    return true;
+}
+
+function handle_product_grouping($product_id, $product_data) {
+    if (empty($product_data['parent_product_id'])) {
+        return;
+    }
+    
+    $parent_product_id = $product_data['parent_product_id'];
+    
+    // Find or create the grouped product
+    $grouped_product_id = find_or_create_grouped_product($parent_product_id);
+    
+    if ($grouped_product_id) {
+        // Add this product to the group
+        $result = add_product_to_group($product_id, $grouped_product_id);
+        if (!$result) {
+            error_log('GGT Plugin: Failed to add product ' . $product_id . ' to group ' . $grouped_product_id);
+        }
+    }
+}
+
+
