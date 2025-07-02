@@ -110,8 +110,22 @@ if (!function_exists('ggt_sinappsus_connect_to_api')) {
             'success' => ($status_code >= 200 && $status_code < 300)
         ]);
 
-        // Handle error status codes
+        // Handle error status codes, but treat 404 as a valid response for some endpoints
         if ($status_code < 200 || $status_code >= 300) {
+            // For 404 responses, check if we have a valid JSON response with a message
+            if ($status_code === 404 && $decoded_body && isset($decoded_body['message'])) {
+                ggt_log_api_interaction('API 404 response with message', 'info', [
+                    'endpoint' => $endpoint,
+                    'status_code' => $status_code,
+                    'message' => $decoded_body['message']
+                ]);
+                
+                // Return the response as-is, but add status code for reference
+                $response_data = $decoded_body;
+                $response_data['status_code'] = $status_code;
+                return $response_data;
+            }
+            
             ggt_log_api_interaction('API error response', 'error', [
                 'endpoint' => $endpoint,
                 'status_code' => $status_code,
@@ -183,6 +197,19 @@ if (!function_exists('ggt_fetch_order_progress')) {
                     'error' => $response['error']
                 ]);
             }
+            return $response;
+        }
+        
+        // Check if it's a 404 with a message (valid "not found" response)
+        if (isset($response['status_code']) && $response['status_code'] === 404 && isset($response['message'])) {
+            if (function_exists('wc_get_logger')) {
+                wc_get_logger()->info('Order progress - no transactions found', [
+                    'source' => 'ggt-api',
+                    'order_number' => $order_number,
+                    'message' => $response['message']
+                ]);
+            }
+            // Return the response as-is - it's a valid "not found" response
             return $response;
         }
         
