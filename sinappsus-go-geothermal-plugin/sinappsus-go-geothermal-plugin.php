@@ -4,15 +4,15 @@
  * Description: A custom WordPress plugin to integrate WooCommerce with The Go Geothermal API.
  * Plugin URI: https://gogeothermal.co.uk
  * Author URI: https://sinappsus.agency
- * Version: 0.1.0
+ * Version: 0.1.1
  * Author: Sinappsus
  * Requires at least: 5.0
- * Tested up to: 6.0
+ * Tested up to: 6.8
 */
 
 defined('ABSPATH') || exit;
 
-define('GGT_SINAPPSUS_PLUGIN_VERSION', '0.1.0');
+define('GGT_SINAPPSUS_PLUGIN_VERSION', '0.1.1');
 define('GGT_SINAPPSUS_PLUGIN_URL', untrailingslashit(plugins_url(basename(plugin_dir_path(__FILE__)), basename(__FILE__))));
 define('GGT_SINAPPSUS_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('GGT_SINAPPSUS_API_URL', 'https://api.gogeothermal.uk/api');
