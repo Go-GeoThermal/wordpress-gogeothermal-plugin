@@ -346,7 +346,7 @@ class GGT_Checkout_Enhancements {
         }
         
         // Use the centralized API connector
-        $endpoint = 'customers/' . urlencode($account_ref) . '/delivery-address';
+        $endpoint = 'customers/' . urlencode($account_ref) . '/addresses';
         $response = ggt_sinappsus_connect_to_api($endpoint);
         
         if (isset($response['error'])) {

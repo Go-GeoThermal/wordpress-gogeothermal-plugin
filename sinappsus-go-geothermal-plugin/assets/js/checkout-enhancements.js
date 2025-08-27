@@ -447,64 +447,11 @@
     function updateVisiblePrices(prices) {
         console.log('🔄 [GGT] Updating visible prices in DOM...');
         
-        // Create a map for faster lookup
-        const priceMap = {};
-        prices.forEach(function(priceItem) {
-            if (priceItem.stockCode && priceItem.storedPrice > 0) {
-                priceMap[priceItem.stockCode] = priceItem.storedPrice;
-            }
-        });
+        // Don't update visible prices manually - let WooCommerce handle this
+        // The backend has already updated the cart prices via ajax_update_cart_prices,
+        // and WooCommerce will display the correct prices when fragments are refreshed
         
-        console.log('🔍 [GGT] Price map:', priceMap);
-        
-        // For WooCommerce Blocks checkout, we need a different approach
-        // Get cart stock codes from our data
-        if (ggt_checkout_data.cart_stock_codes && ggt_checkout_data.cart_stock_codes.length) {
-            console.log('🔄 [GGT] Using cart stock codes for WooCommerce Blocks...');
-            
-            ggt_checkout_data.cart_stock_codes.forEach(function(cartItem, index) {
-                const stockCode = cartItem.stock_code;
-                
-                if (priceMap[stockCode]) {
-                    const newPrice = parseFloat(priceMap[stockCode]).toFixed(2);
-                    console.log('💰 [GGT] Updating price for', stockCode, 'to £' + newPrice);
-                    
-                    // Find price elements for this specific cart item
-                    // Look for elements within the specific order summary item
-                    $('.wc-block-components-order-summary-item').eq(index).find('.wc-block-formatted-money-amount').each(function() {
-                        const oldPrice = $(this).text();
-                        $(this).text('£' + newPrice);
-                        console.log('✅ [GGT] Updated price element from', oldPrice, 'to £' + newPrice);
-                    });
-                }
-            });
-        }
-        
-        // Strategy 1: Look for elements with stock code data attributes (fallback)
-        $('[data-stock-code]').each(function() {
-            const stockCode = $(this).data('stock-code');
-            console.log('🔍 [GGT] Found element with stock code:', stockCode);
-            
-            if (priceMap[stockCode]) {
-                const newPrice = parseFloat(priceMap[stockCode]).toFixed(2);
-                console.log('💰 [GGT] Should update price for', stockCode, 'to £' + newPrice);
-                
-                // Try to find price elements near this element
-                const $item = $(this).closest('.cart_item, .product, .order-item, tr, .wc-block-cart-item');
-                const $priceElements = $item.find('.amount, .price, .woocommerce-Price-amount, .product-price, .wc-block-formatted-money-amount');
-                
-                if ($priceElements.length) {
-                    console.log('💰 [GGT] Found', $priceElements.length, 'price elements to update');
-                    $priceElements.each(function() {
-                        const oldPrice = $(this).text();
-                        $(this).text('£' + newPrice);
-                        console.log('✅ [GGT] Updated price from', oldPrice, 'to £' + newPrice);
-                    });
-                } else {
-                    console.log('⚠️ [GGT] No price elements found near stock code element');
-                }
-            }
-        });
+        console.log('ℹ️ [GGT] Skipping manual DOM price updates - letting WooCommerce handle display after server update');
         
         // Force recalculate totals by triggering WC events
         $(document.body).trigger('wc_fragments_refreshed');
@@ -623,6 +570,7 @@
     }
     
     function fetchDeliveryAddresses() {
+        console.log('🔄 [GGT] Fetching delivery addresses...', ggt_checkout_data.account_ref);
         $.ajax({
             url: ggt_checkout_data.ajax_url,
             type: 'POST',
@@ -634,9 +582,9 @@
             success: function(response) {
                 console.log('🔄 [GGT] Delivery addresses response:', response);
                 // The results array directly contains the addresses, not results.addresses
-                if (response.success && response.data && response.data.results) {
-                    console.log('✅ [GGT] Found ' + response.data.results.length + ' delivery addresses');
-                    displayDeliveryAddresses(response.data.results);
+                if (response.success && response.data && response.data.data) {
+                    console.log('✅ [GGT] Found ' + response.data.data.length + ' delivery addresses');
+                    displayDeliveryAddresses(response.data.data);
                 } else {
                     console.error('❌ [GGT] Could not find delivery addresses in response:', response);
                     alert('No delivery addresses found for your account.');
