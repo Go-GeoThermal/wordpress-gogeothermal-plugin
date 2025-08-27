@@ -323,28 +323,36 @@
     
     function updateCartPrices(prices) {
         console.log('🔄 [GGT] Updating cart with custom prices...');
+        console.log('🔍 [GGT] Available cart stock codes:', ggt_checkout_data.cart_stock_codes);
+        console.log('🔍 [GGT] Prices to apply:', prices);
+        
+        if (!ggt_checkout_data.cart_stock_codes || !ggt_checkout_data.cart_stock_codes.length) {
+            console.log('⚠️ [GGT] No cart stock codes available');
+            return;
+        }
+        
         let priceUpdated = false;
         
+        // Apply custom prices to cart items by matching stock codes
         $.each(prices, function(index, priceItem) {
             if (!priceItem.stockCode || priceItem.storedPrice <= 0) {
+                console.log('⚠️ [GGT] Skipping invalid price item:', priceItem);
                 return; // Skip invalid items
             }
             
-            // Find cart items with matching stock code and update if needed
-            $('.cart_item').each(function() {
-                const $item = $(this);
-                const stockCode = $item.data('stock-code');
-                
-                if (stockCode === priceItem.stockCode) {
-                    // Update the price - note: we'll need to trigger cart update via AJAX
+            // Find matching cart item
+            $.each(ggt_checkout_data.cart_stock_codes, function(i, cartItem) {
+                if (cartItem.stock_code === priceItem.stockCode) {
+                    console.log(`✅ [GGT] Found match for ${priceItem.stockCode} - updating price to ${priceItem.storedPrice}`);
                     priceUpdated = true;
-                    console.log(`✅ [GGT] Updating price for ${stockCode} to ${priceItem.storedPrice}`);
+                    return false; // Break out of inner loop
                 }
             });
         });
         
         if (priceUpdated) {
-            // Update cart totals
+            console.log('🔄 [GGT] Sending price update to server...');
+            // Update cart totals on server
             $.ajax({
                 url: ggt_checkout_data.ajax_url,
                 type: 'POST',
@@ -354,13 +362,219 @@
                     prices: prices
                 },
                 success: function(response) {
+                    console.log('🔄 [GGT] Server response:', response);
                     if (response.success) {
-                        // Refresh the checkout to show updated prices
+                        console.log('✅ [GGT] Cart prices updated successfully');
+                        
+                        // Extract the updated cart total from server response
+                        if (response.data && response.data.cart_total) {
+                            console.log('💰 [GGT] Server calculated new cart total:', response.data.cart_total);
+                            updateTotalsFromServer(response.data);
+                        }
+                        
+                        // Try multiple refresh strategies
+                        console.log('🔄 [GGT] Attempting to refresh checkout display...');
+                        
+                        // Strategy 1: Update visible prices immediately
+                        updateVisiblePrices(prices);
+                        
+                        // Strategy 2: Force WooCommerce to recalculate totals
                         $('body').trigger('update_checkout');
+                        
+                        // Strategy 3: Trigger cart calculation refresh
+                        $('body').trigger('wc_update_cart');
+                        
+                        // Strategy 4: Force checkout fragments refresh
+                        setTimeout(function() {
+                            $('body').trigger('updated_checkout');
+                            console.log('✅ [GGT] Triggered checkout refresh events');
+                        }, 500);
+                        
+                        // Debug: Log what's actually in the DOM
+                        debugDOMElements();
+                        
+                        // Strategy 2: Trigger WooCommerce checkout update
+                        $('body').trigger('update_checkout');
+                        
+                        // Strategy 3: Force WooCommerce to recalculate and refresh fragments
+                        $.ajax({
+                            url: ggt_checkout_data.ajax_url,
+                            type: 'POST',
+                            data: {
+                                action: 'woocommerce_get_refreshed_fragments',
+                                applied_coupons: [],
+                                nonce: ggt_checkout_data.nonce
+                            },
+                            success: function(fragmentsResponse) {
+                                console.log('🔄 [GGT] Fragments refreshed:', fragmentsResponse);
+                                // Force a complete page refresh if needed
+                                if (fragmentsResponse && fragmentsResponse.fragments) {
+                                    // Apply fragments manually or trigger body update
+                                    $(document.body).trigger('wc_fragments_loaded');
+                                }
+                            },
+                            error: function(xhr, status, error) {
+                                console.error('❌ [GGT] Error refreshing fragments:', error);
+                            }
+                        });
+                        
+                        // Strategy 4: Force reload checkout fragments after a delay
+                        setTimeout(function() {
+                            console.log('🔄 [GGT] Triggering delayed checkout refresh...');
+                            $('body').trigger('updated_checkout');
+                            
+                            // Final attempt - checking if prices updated
+                            setTimeout(function() {
+                                console.log('🔄 [GGT] Final attempt - checking if prices updated...');
+                                updateVisiblePrices(prices);
+                            }, 1000);
+                        }, 500);
+                        
+                    } else {
+                        console.error('❌ [GGT] Failed to update cart prices:', response);
                     }
+                },
+                error: function(xhr, status, error) {
+                    console.error('❌ [GGT] Error updating cart prices:', error);
+                    console.error('❌ [GGT] XHR details:', xhr);
+                }
+            });
+        } else {
+            console.log('ℹ️ [GGT] No cart prices needed updating');
+        }
+    }
+    
+    function updateVisiblePrices(prices) {
+        console.log('🔄 [GGT] Updating visible prices in DOM...');
+        
+        // Create a map for faster lookup
+        const priceMap = {};
+        prices.forEach(function(priceItem) {
+            if (priceItem.stockCode && priceItem.storedPrice > 0) {
+                priceMap[priceItem.stockCode] = priceItem.storedPrice;
+            }
+        });
+        
+        console.log('🔍 [GGT] Price map:', priceMap);
+        
+        // For WooCommerce Blocks checkout, we need a different approach
+        // Get cart stock codes from our data
+        if (ggt_checkout_data.cart_stock_codes && ggt_checkout_data.cart_stock_codes.length) {
+            console.log('🔄 [GGT] Using cart stock codes for WooCommerce Blocks...');
+            
+            ggt_checkout_data.cart_stock_codes.forEach(function(cartItem, index) {
+                const stockCode = cartItem.stock_code;
+                
+                if (priceMap[stockCode]) {
+                    const newPrice = parseFloat(priceMap[stockCode]).toFixed(2);
+                    console.log('💰 [GGT] Updating price for', stockCode, 'to £' + newPrice);
+                    
+                    // Find price elements for this specific cart item
+                    // Look for elements within the specific order summary item
+                    $('.wc-block-components-order-summary-item').eq(index).find('.wc-block-formatted-money-amount').each(function() {
+                        const oldPrice = $(this).text();
+                        $(this).text('£' + newPrice);
+                        console.log('✅ [GGT] Updated price element from', oldPrice, 'to £' + newPrice);
+                    });
                 }
             });
         }
+        
+        // Strategy 1: Look for elements with stock code data attributes (fallback)
+        $('[data-stock-code]').each(function() {
+            const stockCode = $(this).data('stock-code');
+            console.log('🔍 [GGT] Found element with stock code:', stockCode);
+            
+            if (priceMap[stockCode]) {
+                const newPrice = parseFloat(priceMap[stockCode]).toFixed(2);
+                console.log('💰 [GGT] Should update price for', stockCode, 'to £' + newPrice);
+                
+                // Try to find price elements near this element
+                const $item = $(this).closest('.cart_item, .product, .order-item, tr, .wc-block-cart-item');
+                const $priceElements = $item.find('.amount, .price, .woocommerce-Price-amount, .product-price, .wc-block-formatted-money-amount');
+                
+                if ($priceElements.length) {
+                    console.log('💰 [GGT] Found', $priceElements.length, 'price elements to update');
+                    $priceElements.each(function() {
+                        const oldPrice = $(this).text();
+                        $(this).text('£' + newPrice);
+                        console.log('✅ [GGT] Updated price from', oldPrice, 'to £' + newPrice);
+                    });
+                } else {
+                    console.log('⚠️ [GGT] No price elements found near stock code element');
+                }
+            }
+        });
+        
+        // Force recalculate totals by triggering WC events
+        $(document.body).trigger('wc_fragments_refreshed');
+        $(document.body).trigger('updated_wc_div');
+        $(document.body).trigger('wc_blocks_checkout_update_order_preview');
+    }
+    
+    function updateTotalsFromServer(serverData) {
+        console.log('💰 [GGT] Updating totals from server data...');
+        
+        if (serverData.cart_total) {
+            // Extract the numeric value from the HTML cart total
+            const tempDiv = $('<div>').html(serverData.cart_total);
+            const newTotal = tempDiv.text().trim();
+            console.log('💰 [GGT] Extracted new total:', newTotal);
+            
+            // Update subtotal and total elements
+            $('.wc-block-components-totals-item__value').each(function() {
+                const currentText = $(this).text();
+                // Update if this looks like a total (contains £ and similar amount)
+                if (currentText.includes('£') && currentText.includes('73.42')) {
+                    $(this).text(newTotal);
+                    console.log('✅ [GGT] Updated total from', currentText, 'to', newTotal);
+                }
+            });
+            
+            // Also update any other total-related elements
+            $('.wc-block-components-totals-footer-item__value, .order-total .amount').each(function() {
+                const currentText = $(this).text();
+                if (currentText.includes('£') && currentText.includes('73.42')) {
+                    $(this).text(newTotal);
+                    console.log('✅ [GGT] Updated footer total from', currentText, 'to', newTotal);
+                }
+            });
+        }
+    }
+    
+    function debugDOMElements() {
+        console.log('🔍 [GGT] DOM Debug - Looking for cart elements...');
+        
+        // Check for stock code data attributes
+        const stockCodeElements = $('[data-stock-code]');
+        console.log('🔍 [GGT] Found', stockCodeElements.length, 'elements with data-stock-code');
+        stockCodeElements.each(function(i) {
+            console.log('🔍 [GGT] Stock code element', i, ':', $(this).data('stock-code'), $(this)[0]);
+        });
+        
+        // Check for cart items (both classic and blocks)
+        const cartItems = $('.cart_item, .product, .order-item, .wc-block-cart-item, .wc-block-components-order-summary-item');
+        console.log('🔍 [GGT] Found', cartItems.length, 'cart items');
+        
+        // Check for WooCommerce Blocks specific elements
+        const blockElements = $('.wc-block-components-order-summary-item');
+        console.log('🔍 [GGT] Found', blockElements.length, 'WC Blocks order summary items');
+        
+        // Check for price elements (with more specific WC Blocks selectors)
+        const priceElements = $('.amount, .price, .woocommerce-Price-amount, .product-price, .wc-block-formatted-money-amount, .wc-block-components-formatted-money-amount');
+        console.log('🔍 [GGT] Found', priceElements.length, 'price elements');
+        priceElements.each(function(i) {
+            if (i < 10) { // Log first 10 to avoid spam
+                console.log('🔍 [GGT] Price element', i, ':', $(this).text(), 'Classes:', $(this).attr('class'));
+            }
+        });
+        
+        // Check total elements
+        const totalElements = $('.order-total, .wc-block-components-totals-item, .wc-block-components-totals-footer-item');
+        console.log('🔍 [GGT] Found', totalElements.length, 'total elements');
+        
+        // Log our cart stock codes data
+        console.log('🔍 [GGT] Cart stock codes from PHP:', ggt_checkout_data.cart_stock_codes);
     }
     
     function setupDeliveryAddressSelector() {
