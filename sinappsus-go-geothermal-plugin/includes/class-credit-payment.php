@@ -295,12 +295,18 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         foreach ($order->get_items() as $item_id => $item) {
             $product = $item->get_product();
             $stock_code = get_post_meta($product->get_id(), '_stockCode', true); // Fetch the stock code
+            
+            // Calculate unit price (total item price divided by quantity)
+            $quantity = $item->get_quantity();
+            $total_price = $item->get_total();
+            $unit_price = $quantity > 0 ? ($total_price / $quantity) : 0;
 
             $order_data['items'][] = array(
                 'product_id' => $product->get_id(),
                 'name'       => $product->get_name(),
-                'quantity'   => $item->get_quantity(),
-                'price'      => $item->get_total(),
+                'quantity'   => $quantity,
+                'unitPrice'  => round($unit_price, 2), // Unit price per item
+                'price'      => $total_price, // Total price for all items of this type
                 'stock_code' => $stock_code, // Include the stock code
             );
         }

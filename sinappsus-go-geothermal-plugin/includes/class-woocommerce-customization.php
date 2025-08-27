@@ -450,11 +450,16 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         if (!$product) continue;
         
         $stock_code = get_post_meta($product->get_id(), '_stockCode', true);
+
+        $quantity = $item->get_quantity();
+            $total_price = $item->get_total();
+            $unit_price = $quantity > 0 ? ($total_price / $quantity) : 0;
         
         $order_data['items'][] = [
             'product_id' => $product->get_id(),
             'name'       => $item->get_name(),
             'quantity'   => $item->get_quantity(),
+            'unitPrice'  => round($unit_price, 2), // Unit price per item
             'price'      => $item->get_total(),
             'stock_code' => $stock_code,
         ];
