@@ -21,6 +21,12 @@ class Sinappsus_GGT_Admin_UI
 
         // Get selected environment or default to production
         $selected_env = get_option('ggt_sinappsus_environment', 'production');
+        
+        // Validate environment key exists, fallback to production if invalid/empty
+        if (empty($selected_env) || !isset($this->environments[$selected_env])) {
+            $selected_env = 'production';
+        }
+        
         $this->api_url = $this->environments[$selected_env]['api_url'];
 
         add_action('admin_menu', [$this, 'register_admin_menu']);
@@ -71,6 +77,24 @@ class Sinappsus_GGT_Admin_UI
                         <th scope="row">Password</th>
                         <td><input type="password" name="ggt_sinappsus_password" value="<?php echo esc_attr(get_option('ggt_sinappsus_password')); ?>" /></td>
                     </tr>
+                        <tr valign="top">
+                            <th scope="row">Import: Enable ACF Relate</th>
+                            <td>
+                                <label for="ggt_import_enable_acf_relate">
+                                    <input type="checkbox" id="ggt_import_enable_acf_relate" name="ggt_import_enable_acf_relate" value="1" <?php checked(1, get_option('ggt_import_enable_acf_relate'), true); ?> />
+                                    Enable ACF relating during import
+                                </label>
+                                <p class="description">When enabled the importer will set the ACF fields for related products and required flag if mapping is provided.</p>
+                            </td>
+                        </tr>
+                        <tr valign="top">
+                            <th scope="row">ACF field name/key for "Is Required"</th>
+                            <td><input type="text" name="ggt_import_acf_required_field" value="<?php echo esc_attr(get_option('ggt_import_acf_required_field')); ?>" /><p class="description">Enter the ACF field name or field key used for the true/false "Is Required" field (e.g. <code>is_required</code> or <code>field_abc123</code>).</p></td>
+                        </tr>
+                        <tr valign="top">
+                            <th scope="row">ACF field name/key for "Related Products"</th>
+                            <td><input type="text" name="ggt_import_acf_related_field" value="<?php echo esc_attr(get_option('ggt_import_acf_related_field')); ?>" /><p class="description">Enter the ACF field name or field key used for relationship field (e.g. <code>related_products</code> or <code>field_def456</code>).</p></td>
+                        </tr>
                 </table>
                 <p class="submit">
                     <button type="button" id="authenticate-button" class="button button-primary">Authenticate</button>
@@ -647,6 +671,10 @@ function ggt_sinappsus_register_settings()
     register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_password');
     register_setting('ggt_sinappsus_settings_group', 'ggt_enable_additional_registration_fields');
     register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_environment');
+    // Import relating options
+    register_setting('ggt_sinappsus_settings_group', 'ggt_import_enable_acf_relate');
+    register_setting('ggt_sinappsus_settings_group', 'ggt_import_acf_required_field');
+    register_setting('ggt_sinappsus_settings_group', 'ggt_import_acf_related_field');
 }
 
 add_action('wp_ajax_clear_all_products', 'clear_all_products');
@@ -786,8 +814,8 @@ function create_product()
 
     $product->save();
     
-    // Handle product grouping after product is saved
-    handle_product_grouping($product->get_id(), $product_data);
+    // Optionally relate products via ACF after product is saved
+    relate_products_via_acf($product->get_id(), $product_data);
     
     // Set featured image after product is saved (needs product ID)
     if (!empty($product_data['image_url'])) {
@@ -837,8 +865,8 @@ function update_product()
 
         $product->save();
         
-        // Handle product grouping after product is saved
-        handle_product_grouping($product->get_id(), $product_data);
+    // Optionally relate products via ACF after product is saved
+    relate_products_via_acf($product->get_id(), $product_data);
         
         // Set featured image after product is saved
         if (!empty($product_data['image_url'])) {
@@ -1649,16 +1677,142 @@ function handle_product_grouping($product_id, $product_data) {
     
     $parent_product_id = $product_data['parent_product_id'];
     
-    // Find or create the grouped product
-    $grouped_product_id = find_or_create_grouped_product($parent_product_id);
-    
-    if ($grouped_product_id) {
-        // Add this product to the group
-        $result = add_product_to_group($product_id, $grouped_product_id);
-        if (!$result) {
-            error_log('GGT Plugin: Failed to add product ' . $product_id . ' to group ' . $grouped_product_id);
+/**
+ * Resolve a stockCode to a product ID.
+ * Searches meta key `_stockCode` for a match.
+ */
+function stockcode_to_product_id($stockCode) {
+    if (empty($stockCode)) return 0;
+    $posts = get_posts(array(
+        'post_type' => 'product',
+        'meta_key' => '_stockCode',
+        'meta_value' => $stockCode,
+        'fields' => 'ids',
+        'posts_per_page' => 1,
+    ));
+    return !empty($posts) ? intval($posts[0]) : 0;
+}
+
+/**
+ * Return true if Advanced Custom Fields (Pro) plugin is installed and active.
+ */
+function is_acf_pro_active() {
+    // Try plugin path check first
+    if (!function_exists('is_plugin_active')) {
+        if (file_exists(ABSPATH . 'wp-admin/includes/plugin.php')) {
+            include_once(ABSPATH . 'wp-admin/includes/plugin.php');
         }
     }
+
+    // Check common plugin folder names (pro and free)
+    if (function_exists('is_plugin_active')) {
+        if (is_plugin_active('advanced-custom-fields-pro/acf.php') || is_plugin_active('advanced-custom-fields/acf.php')) {
+            return true;
+        }
+    }
+
+    // As a fallback, check for core ACF functions (update_field etc.)
+    if (function_exists('update_field') || function_exists('acf_get_field')) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Relate products via ACF fields after an import/update.
+ * Expects the imported product data to include a `RelatedProduct` key (pipe or comma separated stock codes)
+ * and optionally an `IsRequired` flag. Uses plugin options to determine ACF field names/keys.
+ */
+function relate_products_via_acf($product_id, $product_data) {
+    // Only run if ACF Pro is installed and active
+    if (!is_acf_pro_active()) {
+        return;
+    }
+
+    // Only run if enabled in options
+    if (!get_option('ggt_import_enable_acf_relate')) {
+        return;
+    }
+
+    $related_field = get_option('ggt_import_acf_related_field');
+    $required_field = get_option('ggt_import_acf_required_field');
+
+    // If nothing configured, bail
+    if (empty($related_field) && empty($required_field)) {
+        return;
+    }
+
+    // Handle related products: parse incoming codes and merge with existing related IDs, avoiding duplicates
+    $incoming_related_ids = array();
+    if (!empty($product_data['RelatedProduct'])) {
+        // Normalize delimiters (comma or pipe)
+        $raw = $product_data['RelatedProduct'];
+        $parts = preg_split('/[,|\\|\|]+/', $raw);
+        foreach ($parts as $p) {
+            $code = trim($p);
+            if (empty($code)) continue;
+            $id = stockcode_to_product_id($code);
+            if ($id) $incoming_related_ids[] = $id;
+        }
+    }
+
+    if (!empty($related_field) && !empty($incoming_related_ids)) {
+        // Get existing related IDs (ACF or postmeta)
+        $existing_related = array();
+        if (function_exists('get_field')) {
+            $existing = get_field($related_field, $product_id);
+            if (is_array($existing)) {
+                // ACF relationship may return array of post objects or IDs
+                foreach ($existing as $e) {
+                    if (is_object($e) && isset($e->ID)) {
+                        $existing_related[] = intval($e->ID);
+                    } elseif (is_numeric($e)) {
+                        $existing_related[] = intval($e);
+                    }
+                }
+            }
+        } else {
+            $existing = get_post_meta($product_id, $related_field, true);
+            if (!empty($existing)) {
+                if (is_string($existing)) {
+                    $maybe = maybe_unserialize($existing);
+                    if (is_array($maybe)) $existing = $maybe;
+                }
+                if (is_array($existing)) {
+                    foreach ($existing as $e) {
+                        if (is_numeric($e)) $existing_related[] = intval($e);
+                    }
+                }
+            }
+        }
+
+        // Merge and dedupe
+        $merged = array_values(array_unique(array_merge($existing_related, $incoming_related_ids)));
+
+        // Save merged list via ACF if available, otherwise postmeta
+        if (function_exists('update_field')) {
+            update_field($related_field, $merged, $product_id);
+        } else {
+            update_post_meta($product_id, $related_field, maybe_serialize($merged));
+        }
+    }
+
+    // Handle required flag (truthy values in product_data)
+    if (!empty($required_field)) {
+        $is_required = false;
+        if (isset($product_data['IsRequired'])) {
+            $val = $product_data['IsRequired'];
+            $is_required = in_array(strtolower((string)$val), ['1', 'true', 'yes', 'y'], true);
+        }
+
+        if (function_exists('update_field')) {
+            update_field($required_field, $is_required ? 1 : 0, $product_id);
+        } else {
+            update_post_meta($product_id, $required_field, $is_required ? '1' : '0');
+        }
+    }
+}
 }
 
 
