@@ -48,3 +48,12 @@ add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'ggt_sinappsus_pl
 
 // Load The Go Geothermal Admin UI
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/ui.php';
+
+// Load Flexible Import functionality
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/flexible-import.php';
+
+// Load Custom Product Tab for mapped fields
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/product-tab.php';
+
+// Load Product Columns customization
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/product-columns.php';

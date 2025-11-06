@@ -9,6 +9,25 @@ require_once __DIR__ . '/../const.php';
 ini_set('max_execution_time', 0);
 ini_set('memory_limit', '3048M');
 
+/**
+ * Write to plugin debug log file
+ */
+function ggt_log($message, $context = '') {
+    $log_dir = GGT_SINAPPSUS_PLUGIN_PATH . '/logs';
+    
+    // Create logs directory if it doesn't exist
+    if (!file_exists($log_dir)) {
+        mkdir($log_dir, 0755, true);
+    }
+    
+    $log_file = $log_dir . '/debug.log';
+    $timestamp = date('Y-m-d H:i:s');
+    $context_str = $context ? " [{$context}]" : '';
+    $log_line = "[{$timestamp}]{$context_str} {$message}\n";
+    
+    file_put_contents($log_file, $log_line, FILE_APPEND);
+}
+
 class Sinappsus_GGT_Admin_UI
 {
     private $api_url;
@@ -44,6 +63,15 @@ class Sinappsus_GGT_Admin_UI
             'dashicons-admin-generic',
             6
         );
+        
+        add_submenu_page(
+            'sinappsus-ggt-settings',
+            'Debug Logs',
+            'Debug Logs',
+            'manage_options',
+            'sinappsus-ggt-logs',
+            [$this, 'display_logs_page']
+        );
     }
 
     public function display_settings_page()
@@ -77,24 +105,6 @@ class Sinappsus_GGT_Admin_UI
                         <th scope="row">Password</th>
                         <td><input type="password" name="ggt_sinappsus_password" value="<?php echo esc_attr(get_option('ggt_sinappsus_password')); ?>" /></td>
                     </tr>
-                        <tr valign="top">
-                            <th scope="row">Import: Enable ACF Relate</th>
-                            <td>
-                                <label for="ggt_import_enable_acf_relate">
-                                    <input type="checkbox" id="ggt_import_enable_acf_relate" name="ggt_import_enable_acf_relate" value="1" <?php checked(1, get_option('ggt_import_enable_acf_relate'), true); ?> />
-                                    Enable ACF relating during import
-                                </label>
-                                <p class="description">When enabled the importer will set the ACF fields for related products and required flag if mapping is provided.</p>
-                            </td>
-                        </tr>
-                        <tr valign="top">
-                            <th scope="row">ACF field name/key for "Is Required"</th>
-                            <td><input type="text" name="ggt_import_acf_required_field" value="<?php echo esc_attr(get_option('ggt_import_acf_required_field')); ?>" /><p class="description">Enter the ACF field name or field key used for the true/false "Is Required" field (e.g. <code>is_required</code> or <code>field_abc123</code>).</p></td>
-                        </tr>
-                        <tr valign="top">
-                            <th scope="row">ACF field name/key for "Related Products"</th>
-                            <td><input type="text" name="ggt_import_acf_related_field" value="<?php echo esc_attr(get_option('ggt_import_acf_related_field')); ?>" /><p class="description">Enter the ACF field name or field key used for relationship field (e.g. <code>related_products</code> or <code>field_def456</code>).</p></td>
-                        </tr>
                 </table>
                 <p class="submit">
                     <button type="button" id="authenticate-button" class="button button-primary">Authenticate</button>
@@ -110,6 +120,10 @@ class Sinappsus_GGT_Admin_UI
                 <div class="action-item">
                     <button type="button" id="clear-products-button" class="button button-secondary">Clear All Products</button>
                     <p class="description">This will remove all products from the database.</p>
+                </div>
+                <div class="action-item">
+                    <button type="button" id="configure-import-button" class="button button-primary">Configure Field Mapping</button>
+                    <p class="description">Map API fields to WooCommerce product fields before importing.</p>
                 </div>
                 <div class="action-item">
                     <button type="button" id="sync-products-button" class="button button-secondary">Sync All Products</button>
@@ -156,23 +170,174 @@ class Sinappsus_GGT_Admin_UI
 
             </div>
 
-            <div class="action-item" style="display: <?php echo $token_exists ? 'block' : 'none'; ?>">
-                <h3>Registration Fields</h3>
+            <div style="display: <?php echo $token_exists ? 'block' : 'none'; ?>">
+                <h2>Registration Fields</h2>
                 <form method="post" action="options.php">
                     <?php
                     settings_fields('ggt_sinappsus_settings_group');
                     do_settings_sections('ggt_sinappsus_settings_group');
                     ?>
-                    <label for="ggt_enable_additional_registration_fields">
-                        <input type="checkbox" id="ggt_enable_additional_registration_fields" name="ggt_enable_additional_registration_fields" value="1" <?php checked(1, get_option('ggt_enable_additional_registration_fields'), true); ?> />
-                        Enable Additional Registration Fields
-                    </label>
-                    <p class="description">Enable or disable additional fields on the registration form.</p>
-                    <?php submit_button(); ?>
+                    <table class="form-table">
+                        <tr valign="top">
+                            <th scope="row">Additional Registration Fields</th>
+                            <td>
+                                <label for="ggt_enable_additional_registration_fields">
+                                    <input type="checkbox" id="ggt_enable_additional_registration_fields" name="ggt_enable_additional_registration_fields" value="1" <?php checked(1, get_option('ggt_enable_additional_registration_fields'), true); ?> />
+                                    Enable Additional Registration Fields
+                                </label>
+                                <p class="description">Enable or disable additional fields on the registration form.</p>
+                            </td>
+                        </tr>
+                    </table>
+                    <?php submit_button('Save Settings'); ?>
+                </form>
+
+                <h2>Import Settings</h2>
+                <form method="post" action="options.php">
+                    <?php
+                    settings_fields('ggt_sinappsus_settings_group');
+                    do_settings_sections('ggt_sinappsus_settings_group');
+                    ?>
+                    <table class="form-table">
+                        <tr valign="top">
+                            <th scope="row">Enable ACF Relate</th>
+                            <td>
+                                <label for="ggt_import_enable_acf_relate">
+                                    <input type="checkbox" id="ggt_import_enable_acf_relate" name="ggt_import_enable_acf_relate" value="1" <?php checked(1, get_option('ggt_import_enable_acf_relate'), true); ?> />
+                                    Enable ACF relating during import
+                                </label>
+                                <p class="description">When enabled, the importer will set the ACF fields for related products and required flag.</p>
+                            </td>
+                        </tr>
+                        <tr valign="top">
+                            <th scope="row">ACF "Is Required" Field</th>
+                            <td>
+                                <?php
+                                $acf_fields = array();
+                                if (function_exists('acf_get_field_groups')) {
+                                    $field_groups = acf_get_field_groups(array('post_type' => 'product'));
+                                    foreach ($field_groups as $group) {
+                                        $fields = acf_get_fields($group['key']);
+                                        if ($fields) {
+                                            foreach ($fields as $field) {
+                                                if ($field['type'] === 'true_false') {
+                                                    $acf_fields[$field['name']] = $field['label'] . ' (' . $field['name'] . ')';
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                $current_required = get_option('ggt_import_acf_required_field');
+                                ?>
+                                <select name="ggt_import_acf_required_field" style="width: 300px;">
+                                    <option value="">-- Select Field --</option>
+                                    <?php foreach ($acf_fields as $name => $label): ?>
+                                        <option value="<?php echo esc_attr($name); ?>" <?php selected($current_required, $name); ?>><?php echo esc_html($label); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <p class="description">Select the ACF true/false field for "Is Required".</p>
+                            </td>
+                        </tr>
+                        <tr valign="top">
+                            <th scope="row">ACF "Related Products" Field</th>
+                            <td>
+                                <?php
+                                $acf_relationship_fields = array();
+                                if (function_exists('acf_get_field_groups')) {
+                                    $field_groups = acf_get_field_groups(array('post_type' => 'product'));
+                                    foreach ($field_groups as $group) {
+                                        $fields = acf_get_fields($group['key']);
+                                        if ($fields) {
+                                            foreach ($fields as $field) {
+                                                if ($field['type'] === 'relationship') {
+                                                    $acf_relationship_fields[$field['name']] = $field['label'] . ' (' . $field['name'] . ')';
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                $current_related = get_option('ggt_import_acf_related_field');
+                                ?>
+                                <select name="ggt_import_acf_related_field" style="width: 300px;">
+                                    <option value="">-- Select Field --</option>
+                                    <?php foreach ($acf_relationship_fields as $name => $label): ?>
+                                        <option value="<?php echo esc_attr($name); ?>" <?php selected($current_related, $name); ?>><?php echo esc_html($label); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <p class="description">Select the ACF relationship field for "Related Products".</p>
+                            </td>
+                        </tr>
+                    </table>
+                    <?php submit_button('Save Settings'); ?>
                 </form>
             </div>
 
         </div>
+
+        <!-- Flexible Import Modal -->
+        <div id="flexible-import-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:999999;">
+            <div style="position:relative; width:90%; max-width:1200px; margin:50px auto; background:#fff; border-radius:8px; max-height:90vh; overflow-y:auto;">
+                <div style="padding:20px; border-bottom:1px solid #ddd;">
+                    <h2 style="margin:0;">Configure Product Field Mapping</h2>
+                    <button id="close-modal" style="position:absolute; top:20px; right:20px; background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+                </div>
+                
+                <div id="modal-content" style="padding:20px;">
+                    <!-- Step 1: Preview -->
+                    <div id="step-preview" class="import-step">
+                        <h3>Step 1: Preview API Data</h3>
+                        <p>Loading sample products from API...</p>
+                        <button type="button" id="load-preview" class="button button-primary">Load Preview</button>
+                        <div id="preview-results" style="margin-top:15px;"></div>
+                    </div>
+
+                    <!-- Step 2: Field Mapping -->
+                    <div id="step-mapping" class="import-step" style="display:none;">
+                        <h3>Step 2: Map Fields</h3>
+                        <p>Map API fields (left) to WooCommerce fields (right)</p>
+                        
+                        <div style="margin-bottom:15px;">
+                            <button type="button" id="auto-map-fields" class="button">Auto-Map Common Fields</button>
+                            <button type="button" id="clear-mapping" class="button">Clear All Mappings</button>
+                            <button type="button" id="save-mapping" class="button button-primary">Save Mapping</button>
+                            <span style="margin-left:20px;">
+                                <button type="button" id="enable-all-fields" class="button">Enable All</button>
+                                <button type="button" id="disable-all-fields" class="button">Disable All</button>
+                            </span>
+                        </div>
+                        
+                        <div id="field-mapping-container" style="border:1px solid #ddd; padding:15px; background:#f9f9f9; max-height:400px; overflow-y:auto;">
+                            <!-- Dynamic mapping rows will be inserted here -->
+                        </div>
+                        
+                        <div style="margin-top:15px;">
+                            <button type="button" id="next-to-analysis" class="button button-primary">Next: Analyze Import</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Analysis -->
+                    <div id="step-analysis" class="import-step" style="display:none;">
+                        <h3>Step 3: Analyze Import</h3>
+                        <p>Review what will be imported...</p>
+                        <button type="button" id="back-to-mapping" class="button">← Back to Mapping</button>
+                        <button type="button" id="run-analysis" class="button button-primary">Run Analysis</button>
+                        <div id="analysis-results" style="margin-top:15px;"></div>
+                        
+                        <div style="margin-top:15px; display:none;" id="execute-section">
+                            <button type="button" id="execute-import" class="button button-primary">Execute Import</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Results -->
+                    <div id="step-results" class="import-step" style="display:none;">
+                        <h3>Import Complete</h3>
+                        <div id="import-results"></div>
+                        <button type="button" id="close-results" class="button">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <script type="text/javascript">
             document.addEventListener('DOMContentLoaded', function() {
                 function getToken() {
@@ -634,6 +799,400 @@ class Sinappsus_GGT_Admin_UI
                     }
                 });
 
+                // Flexible Import Modal Functionality
+                let availableFields = [];
+                let availableAPIFields = [];
+                let currentMapping = {};
+                let enabledFields = {};
+
+                document.getElementById('configure-import-button').addEventListener('click', function() {
+                    document.getElementById('flexible-import-modal').style.display = 'block';
+                    document.getElementById('step-preview').style.display = 'block';
+                    document.getElementById('step-mapping').style.display = 'none';
+                    document.getElementById('step-analysis').style.display = 'none';
+                    document.getElementById('step-results').style.display = 'none';
+                });
+
+                document.getElementById('close-modal').addEventListener('click', function() {
+                    document.getElementById('flexible-import-modal').style.display = 'none';
+                });
+
+                document.getElementById('load-preview').addEventListener('click', function() {
+                    document.getElementById('preview-results').innerHTML = '<p>Loading...</p>';
+                    
+                    Promise.all([
+                        jQuery.post(ajaxurl, { action: 'ggt_preview_import' }),
+                        jQuery.post(ajaxurl, { action: 'ggt_get_available_fields' }),
+                        jQuery.post(ajaxurl, { action: 'ggt_get_field_mapping' })
+                    ]).then(([previewRes, fieldsRes, mappingRes]) => {
+                        if (previewRes.success && fieldsRes.success) {
+                            availableFields = fieldsRes.data;
+                            availableAPIFields = previewRes.data.available_fields;
+                            
+                            if (mappingRes.success && mappingRes.data) {
+                                // Ensure we get an object, not an array
+                                if (mappingRes.data.mapping) {
+                                    currentMapping = mappingRes.data.mapping;
+                                } else {
+                                    currentMapping = mappingRes.data;
+                                }
+                                
+                                // Force currentMapping to be an object if it's an array
+                                if (Array.isArray(currentMapping)) {
+                                    currentMapping = {};
+                                }
+                                
+                                if (mappingRes.data.enabled_fields) {
+                                    enabledFields = mappingRes.data.enabled_fields;
+                                } else {
+                                    // Default all to enabled
+                                    enabledFields = {};
+                                    Object.keys(currentMapping).forEach(key => {
+                                        enabledFields[key] = true;
+                                    });
+                                }
+                                
+                                // Force enabledFields to be an object if it's an array
+                                if (Array.isArray(enabledFields)) {
+                                    enabledFields = {};
+                                }
+                            }
+
+                            let html = '<div style="border:1px solid #ddd; padding:10px; background:#fff;">';
+                            html += '<h4>Sample Products (' + previewRes.data.products.length + ' shown)</h4>';
+                            html += '<table class="wp-list-table widefat fixed striped"><thead><tr>';
+                            
+                            availableAPIFields.slice(0, 5).forEach(field => {
+                                html += '<th>' + field + '</th>';
+                            });
+                            
+                            html += '</tr></thead><tbody>';
+                            
+                            previewRes.data.products.forEach(product => {
+                                html += '<tr>';
+                                availableAPIFields.slice(0, 5).forEach(field => {
+                                    let value = product[field] || '';
+                                    if (typeof value === 'object') value = JSON.stringify(value);
+                                    html += '<td>' + String(value).substring(0, 50) + '</td>';
+                                });
+                                html += '</tr>';
+                            });
+                            
+                            html += '</tbody></table></div>';
+                            html += '<p style="margin-top:15px;"><button type="button" id="proceed-to-mapping" class="button button-primary">Next: Configure Field Mapping</button></p>';
+                            
+                            document.getElementById('preview-results').innerHTML = html;
+                            
+                            document.getElementById('proceed-to-mapping').addEventListener('click', function() {
+                                showMappingStep();
+                            });
+                        } else {
+                            document.getElementById('preview-results').innerHTML = '<p style="color:red;">Error loading preview</p>';
+                        }
+                    });
+                });
+
+                function showMappingStep() {
+                    document.getElementById('step-preview').style.display = 'none';
+                    document.getElementById('step-mapping').style.display = 'block';
+                    
+                    renderFieldMapping();
+                }
+
+                function renderFieldMapping() {
+                    let html = '<table class="wp-list-table widefat fixed"><thead><tr>';
+                    html += '<th style="width:5%;">Enable</th>';
+                    html += '<th style="width:35%;">API Field</th>';
+                    html += '<th style="width:40%;">WooCommerce Field</th>';
+                    html += '<th style="width:20%;">Action</th>';
+                    html += '</tr></thead><tbody>';
+                    
+                    availableAPIFields.forEach(apiField => {
+                        let mappedTo = currentMapping[apiField] || '';
+                        let isEnabled = enabledFields[apiField] !== false;
+                        
+                        html += '<tr>';
+                        html += '<td style="text-align:center;"><input type="checkbox" class="field-enabled-checkbox" data-api-field="' + apiField + '" ' + (isEnabled ? 'checked' : '') + '></td>';
+                        html += '<td><strong>' + apiField + '</strong></td>';
+                        html += '<td><select class="field-mapping-select" data-api-field="' + apiField + '" style="width:100%;">';
+                        html += '<option value="">-- Not Mapped --</option>';
+                        
+                        let currentGroup = '';
+                        availableFields.forEach(field => {
+                            if (field.group !== currentGroup) {
+                                if (currentGroup) html += '</optgroup>';
+                                html += '<optgroup label="' + field.group + '">';
+                                currentGroup = field.group;
+                            }
+                            let selected = (mappedTo === field.value) ? 'selected' : '';
+                            html += '<option value="' + field.value + '" ' + selected + '>' + field.label + '</option>';
+                        });
+                        
+                        html += '</optgroup></select></td>';
+                        html += '<td><button type="button" class="button clear-field-map" data-api-field="' + apiField + '">Clear</button></td>';
+                        html += '</tr>';
+                    });
+                    
+                    html += '</tbody></table>';
+                    document.getElementById('field-mapping-container').innerHTML = html;
+                    
+                    // Attach event listeners
+                    document.querySelectorAll('.field-enabled-checkbox').forEach(checkbox => {
+                        checkbox.addEventListener('change', function() {
+                            let apiField = this.getAttribute('data-api-field');
+                            enabledFields[apiField] = this.checked;
+                        });
+                    });
+                    
+                    document.querySelectorAll('.field-mapping-select').forEach(select => {
+                        select.addEventListener('change', function() {
+                            let apiField = this.getAttribute('data-api-field');
+                            let wcField = this.value;
+                            if (wcField) {
+                                currentMapping[apiField] = wcField;
+                                // Auto-enable when mapping is set
+                                if (!enabledFields.hasOwnProperty(apiField)) {
+                                    enabledFields[apiField] = true;
+                                }
+                            } else {
+                                delete currentMapping[apiField];
+                            }
+                        });
+                    });
+                    
+                    document.querySelectorAll('.clear-field-map').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            let apiField = this.getAttribute('data-api-field');
+                            delete currentMapping[apiField];
+                            renderFieldMapping();
+                        });
+                    });
+                }
+
+                document.getElementById('auto-map-fields').addEventListener('click', function() {
+                    // Auto-map common field names
+                    const autoMappings = {
+                        'stockCode': '_stockCode',
+                        'description': 'description',
+                        'salesPrice': 'regular_price',
+                        'qtyInStock': 'stock_quantity',
+                        'sku': 'sku',
+                        'category': 'category',
+                        'webDescription': 'short_description',
+                        'image_path': 'image_url',
+                        'unitWeight': 'weight'
+                    };
+                    
+                    Object.keys(autoMappings).forEach(apiField => {
+                        if (availableAPIFields.includes(apiField)) {
+                            currentMapping[apiField] = autoMappings[apiField];
+                        }
+                    });
+                    
+                    renderFieldMapping();
+                    alert('Common fields have been auto-mapped. Review and adjust as needed.');
+                });
+
+                document.getElementById('clear-mapping').addEventListener('click', function() {
+                    if (confirm('Clear all field mappings?')) {
+                        currentMapping = {};
+                        renderFieldMapping();
+                    }
+                });
+
+                document.getElementById('enable-all-fields').addEventListener('click', function() {
+                    availableAPIFields.forEach(apiField => {
+                        enabledFields[apiField] = true;
+                    });
+                    renderFieldMapping();
+                });
+
+                document.getElementById('disable-all-fields').addEventListener('click', function() {
+                    availableAPIFields.forEach(apiField => {
+                        enabledFields[apiField] = false;
+                    });
+                    renderFieldMapping();
+                });
+
+                document.getElementById('save-mapping').addEventListener('click', function() {
+                    jQuery.post(ajaxurl, {
+                        action: 'ggt_save_field_mapping',
+                        mapping: JSON.stringify(currentMapping),
+                        enabled_fields: JSON.stringify(enabledFields)
+                    }).done(function(response) {
+                        if (response.success) {
+                            alert('Field mapping saved successfully!');
+                        } else {
+                            alert('Error saving mapping: ' + (response.data || 'Unknown error'));
+                        }
+                    });
+                });
+
+                document.getElementById('next-to-analysis').addEventListener('click', function() {
+                    if (Object.keys(currentMapping).length === 0) {
+                        alert('Please map at least one field before proceeding.');
+                        return;
+                    }
+                    
+                    console.log('Saving mapping:', currentMapping);
+                    console.log('Enabled fields:', enabledFields);
+                    console.log('Mapping count:', Object.keys(currentMapping).length);
+                    
+                    // Show saving indicator
+                    let originalText = this.textContent;
+                    this.textContent = 'Saving...';
+                    this.disabled = true;
+                    
+                    // Save mapping first - send as JSON strings
+                    jQuery.post(ajaxurl, {
+                        action: 'ggt_save_field_mapping',
+                        mapping: JSON.stringify(currentMapping),
+                        enabled_fields: JSON.stringify(enabledFields)
+                    }).done(function(response) {
+                        console.log('Save response:', response);
+                        if (response.success) {
+                            console.log('Saved mapping:', response.data.saved_mapping);
+                            console.log('Saved enabled:', response.data.saved_enabled);
+                            console.log('Received POST:', response.data.received_post);
+                            document.getElementById('step-mapping').style.display = 'none';
+                            document.getElementById('step-analysis').style.display = 'block';
+                        } else {
+                            alert('Error saving mapping: ' + (response.data || 'Unknown error'));
+                        }
+                    }).fail(function(xhr, status, error) {
+                        console.error('Save failed:', status, error);
+                        console.error('Response:', xhr.responseText);
+                        alert('Failed to save mapping. Please check console for details.');
+                    }).always(function() {
+                        document.getElementById('next-to-analysis').textContent = originalText;
+                        document.getElementById('next-to-analysis').disabled = false;
+                    });
+                });
+
+                document.getElementById('back-to-mapping').addEventListener('click', function() {
+                    document.getElementById('step-analysis').style.display = 'none';
+                    document.getElementById('step-mapping').style.display = 'block';
+                });
+
+                document.getElementById('run-analysis').addEventListener('click', function() {
+                    document.getElementById('analysis-results').innerHTML = '<p>Analyzing...</p>';
+                    
+                    jQuery.post(ajaxurl, {
+                        action: 'ggt_analyze_import'
+                    }).done(function(response) {
+                        if (response.success) {
+                            let html = '<div style="border:1px solid #ddd; padding:15px; background:#fff;">';
+                            html += '<h4>Analysis Results</h4>';
+                            html += '<p><strong>Total Products:</strong> ' + response.data.total + '</p>';
+                            html += '<p><strong>Existing (will update):</strong> ' + response.data.existing + '</p>';
+                            html += '<p><strong>New (will create):</strong> ' + response.data.new + '</p>';
+                            
+                            if (response.data.warnings.length > 0) {
+                                html += '<div style="background:#fff3cd; border:1px solid #ffc107; padding:10px; margin-top:10px;">';
+                                html += '<strong>Warnings:</strong><ul>';
+                                response.data.warnings.forEach(warning => {
+                                    html += '<li>' + warning + '</li>';
+                                });
+                                html += '</ul></div>';
+                            }
+                            
+                            html += '</div>';
+                            document.getElementById('analysis-results').innerHTML = html;
+                            document.getElementById('execute-section').style.display = 'block';
+                        } else {
+                            document.getElementById('analysis-results').innerHTML = '<p style="color:red;">Error: ' + (response.data || 'Unknown error') + '</p>';
+                        }
+                    });
+                });
+
+                document.getElementById('execute-import').addEventListener('click', function() {
+                    if (!confirm('Execute import? This will create/update products based on your field mapping.')) {
+                        return;
+                    }
+                    
+                    document.getElementById('analysis-results').innerHTML = '<p>Importing products... This may take a few minutes.</p>';
+                    this.disabled = true;
+                    
+                    jQuery.post(ajaxurl, {
+                        action: 'ggt_execute_flexible_import'
+                    }).done(function(response) {
+                        if (response.success) {
+                            // Main import complete, now process related products
+                            document.getElementById('analysis-results').innerHTML = '<p>Processing related products...</p>';
+                            
+                            jQuery.post(ajaxurl, {
+                                action: 'ggt_process_related_products'
+                            }).done(function(relatedRes) {
+                                document.getElementById('step-analysis').style.display = 'none';
+                                document.getElementById('step-results').style.display = 'block';
+                                
+                                let html = '<div style="border:1px solid #4caf50; padding:15px; background:#e8f5e9;">';
+                                html += '<h4 style="color:#4caf50;">✓ Import Complete!</h4>';
+                                html += '<p><strong>Created:</strong> ' + response.data.created + '</p>';
+                                html += '<p><strong>Updated:</strong> ' + response.data.updated + '</p>';
+                                html += '<p><strong>Skipped:</strong> ' + response.data.skipped + '</p>';
+                                
+                                if (relatedRes.success && relatedRes.data) {
+                                    html += '<p><strong>Related Products Processed:</strong> ' + relatedRes.data.processed + '</p>';
+                                    html += '<p><strong>Related Products Updated:</strong> ' + relatedRes.data.updated + '</p>';
+                                    
+                                    if (relatedRes.data.errors && relatedRes.data.errors.length > 0) {
+                                        html += '<div style="background:#fff3cd; border:1px solid #ffc107; padding:10px; margin-top:10px;">';
+                                        html += '<strong>Related Products Warnings:</strong><ul>';
+                                        relatedRes.data.errors.slice(0, 5).forEach(error => {
+                                            html += '<li>' + error + '</li>';
+                                        });
+                                        if (relatedRes.data.errors.length > 5) {
+                                            html += '<li>... and ' + (relatedRes.data.errors.length - 5) + ' more warnings</li>';
+                                        }
+                                        html += '</ul></div>';
+                                    }
+                                }
+                                
+                                if (response.data.errors.length > 0) {
+                                    html += '<div style="background:#fff3cd; border:1px solid #ffc107; padding:10px; margin-top:10px;">';
+                                    html += '<strong>Import Errors:</strong><ul>';
+                                    response.data.errors.slice(0, 10).forEach(error => {
+                                        html += '<li>' + error + '</li>';
+                                    });
+                                    if (response.data.errors.length > 10) {
+                                        html += '<li>... and ' + (response.data.errors.length - 10) + ' more errors</li>';
+                                    }
+                                    html += '</ul></div>';
+                                }
+                                
+                                html += '</div>';
+                                document.getElementById('import-results').innerHTML = html;
+                            }).fail(function() {
+                                // Show main import results even if related products processing fails
+                                document.getElementById('step-analysis').style.display = 'none';
+                                document.getElementById('step-results').style.display = 'block';
+                                
+                                let html = '<div style="border:1px solid #4caf50; padding:15px; background:#e8f5e9;">';
+                                html += '<h4 style="color:#4caf50;">✓ Import Complete!</h4>';
+                                html += '<p><strong>Created:</strong> ' + response.data.created + '</p>';
+                                html += '<p><strong>Updated:</strong> ' + response.data.updated + '</p>';
+                                html += '<p><strong>Skipped:</strong> ' + response.data.skipped + '</p>';
+                                html += '<p style="color:orange;"><strong>Warning:</strong> Related products processing failed</p>';
+                                html += '</div>';
+                                document.getElementById('import-results').innerHTML = html;
+                            });
+                        } else {
+                            document.getElementById('step-analysis').style.display = 'none';
+                            document.getElementById('step-results').style.display = 'block';
+                            document.getElementById('import-results').innerHTML = '<p style="color:red;">Import failed: ' + (response.data || 'Unknown error') + '</p>';
+                        }
+                    }).fail(function() {
+                        document.getElementById('step-analysis').style.display = 'none';
+                        document.getElementById('step-results').style.display = 'block';
+                        document.getElementById('import-results').innerHTML = '<p style="color:red;">Import request failed</p>';
+                    });
+                });
+
+                document.getElementById('close-results').addEventListener('click', function() {
+                    document.getElementById('flexible-import-modal').style.display = 'none';
+                    location.reload(); // Refresh to show new products
+                });
 
             });
         </script>
@@ -658,6 +1217,53 @@ class Sinappsus_GGT_Admin_UI
         );
 
         return array_merge($plugin_links, $links);
+    }
+    
+    public function display_logs_page()
+    {
+        $log_file = GGT_SINAPPSUS_PLUGIN_PATH . '/logs/debug.log';
+        $log_content = '';
+        $log_size = 0;
+        
+        // Handle clear logs action
+        if (isset($_POST['clear_logs']) && check_admin_referer('ggt_clear_logs')) {
+            if (file_exists($log_file)) {
+                file_put_contents($log_file, '');
+                echo '<div class="notice notice-success"><p>Logs cleared successfully.</p></div>';
+            }
+        }
+        
+        // Read log file
+        if (file_exists($log_file)) {
+            $log_size = filesize($log_file);
+            $log_content = file_get_contents($log_file);
+        }
+        
+        ?>
+        <div class="wrap">
+            <h1>Debug Logs</h1>
+            
+            <div style="margin: 20px 0;">
+                <p><strong>Log File:</strong> <?php echo esc_html($log_file); ?></p>
+                <p><strong>Size:</strong> <?php echo esc_html(size_format($log_size)); ?></p>
+                
+                <form method="post" style="display: inline;">
+                    <?php wp_nonce_field('ggt_clear_logs'); ?>
+                    <button type="submit" name="clear_logs" class="button button-secondary" onclick="return confirm('Are you sure you want to clear all logs?');">Clear Logs</button>
+                </form>
+                
+                <button type="button" class="button" onclick="location.reload();">Refresh</button>
+            </div>
+            
+            <div style="background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 4px; max-height: 600px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px;">
+                <?php if (!empty($log_content)): ?>
+                    <pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;"><?php echo esc_html($log_content); ?></pre>
+                <?php else: ?>
+                    <p style="color: #888;">No logs yet. Logs will appear here when the import runs.</p>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php
     }
 }
 
@@ -805,9 +1411,9 @@ function create_product()
         }
     }
 
-    // Update other meta data (including parent_product_id for grouping)
+    // Update other meta data (including isRequired for grouping)
     foreach ($product_data as $key => $value) {
-        if (!in_array($key, ['sku', 'salesPrice', 'description', 'stockCode', 'category', 'image_url', 'webDescription'])) {
+        if (!in_array($key, ['sku', 'salesPrice', 'description', 'stockCode', 'category', 'image_path', 'webDescription'])) {
             $product->update_meta_data($key, $value);
         }
     }
@@ -818,8 +1424,8 @@ function create_product()
     relate_products_via_acf($product->get_id(), $product_data);
     
     // Set featured image after product is saved (needs product ID)
-    if (!empty($product_data['image_url'])) {
-        set_product_featured_image_from_url($product->get_id(), $product_data['image_url']);
+    if (!empty($product_data['image_path'])) {
+        set_product_featured_image_from_url($product->get_id(), $product_data['image_path']);
     }
     
     wp_send_json_success();
@@ -856,9 +1462,9 @@ function update_product()
             }
         }
 
-        // Update other meta data (including parent_product_id for grouping)
+        // Update other meta data (including isRequired for grouping)
         foreach ($product_data as $key => $value) {
-            if (!in_array($key, ['sku', 'salesPrice', 'description', 'stockCode', 'category', 'image_url', 'webDescription'])) {
+            if (!in_array($key, ['sku', 'salesPrice', 'description', 'stockCode', 'category', 'image_path', 'webDescription'])) {
                 $product->update_meta_data($key, $value);
             }
         }
@@ -869,8 +1475,8 @@ function update_product()
     relate_products_via_acf($product->get_id(), $product_data);
         
         // Set featured image after product is saved
-        if (!empty($product_data['image_url'])) {
-            set_product_featured_image_from_url($product->get_id(), $product_data['image_url']);
+        if (!empty($product_data['image_path'])) {
+            set_product_featured_image_from_url($product->get_id(), $product_data['image_path']);
         }
         
         wp_send_json_success();
@@ -975,239 +1581,11 @@ new Sinappsus_GGT_Admin_UI();
 
 // THE FUNCTIONALITY TO SHOW THE META DATA ON THE PRODUCT
 
-add_action('woocommerce_product_options_general_product_data', 'add_custom_fields_to_product');
+// OLD FUNCTION REMOVED - Custom fields now display in "GoGeothermal Data" tab
+// See includes/product-tab.php for the new implementation
 
-function add_custom_fields_to_product()
-{
-    global $post;
-
-    $custom_fields = [
-        'link_to_product' => 'Link to Product',
-        'content' => 'Content',
-        'product_grid_content' => 'Product Grid Content',
-        'image_url' => 'Image URL',
-        'sku' => 'SKU',
-        'gtin' => 'GTIN',
-        'ean' => 'EAN',
-        'own' => 'Own',
-        'brand' => 'Brand',
-        'category' => 'Category',
-        'output' => 'Output',
-        'energy_rating' => 'Energy Rating',
-        'scop' => 'SCOP',
-        'phase' => 'Phase',
-        'itemType' => 'Item Type',
-        'nominalCode' => 'Nominal Code',
-        'unitOfSale' => 'Unit of Sale',
-        'deptNumber' => 'Dept Number',
-        'custom1' => 'Custom 1',
-        'custom2' => 'Custom 2',
-        'custom3' => 'Custom 3',
-        'deletedFlag' => 'Deleted Flag',
-        'inactiveFlag' => 'Inactive Flag',
-        'salesPrice' => 'Sales Price',
-        'unitWeight' => 'Unit Weight',
-        'taxCode' => 'Tax Code',
-        'qtyAllocated' => 'Qty Allocated',
-        'qtyInStock' => 'Qty In Stock',
-        'qtyOnOrder' => 'Qty On Order',
-        'stockTakeDate' => 'Stock Take Date',
-        'stockCat' => 'Stock Cat',
-        'averageCostPrice' => 'Average Cost Price',
-        'location' => 'Location',
-        'purchaseNominalCode' => 'Purchase Nominal Code',
-        'lastPurchasePrice' => 'Last Purchase Price',
-        'commodityCode' => 'Commodity Code',
-        'barcode' => 'Barcode',
-        'webDetails' => 'Web Details',
-        'webDescription' => 'Web Description',
-        'supplierPartNumber' => 'Supplier Part Number',
-        'recordCreateDate' => 'Record Create Date',
-        'recordModifyDate' => 'Record Modify Date',
-        'supplierRef' => 'Supplier Ref',
-        'webCategoryA' => 'Web Category A',
-        'webCategoryB' => 'Web Category B',
-        'webCategoryC' => 'Web Category C',
-        'instrastatCommCode' => 'Instrastat Comm Code',
-        'reorderLevel' => 'Reorder Level',
-        'reorderQty' => 'Reorder Qty',
-        'webPublish' => 'Web Publish',
-        'webSpecialOffer' => 'Web Special Offer',
-        'webImage' => 'Web Image',
-        'assemblyLevel' => 'Assembly Level',
-        '_stockCode' => 'Stock Code',
-        'lastCostPrice' => 'Last Cost Price',
-        'lastDiscPurchasePrice' => 'Last Disc Purchase Price',
-        'countryCodeOfOrigin' => 'Country Code Of Origin',
-        'discALevel1Rate' => 'Disc A Level 1 Rate',
-        'discALevel2Rate' => 'Disc A Level 2 Rate',
-        'discALevel3Rate' => 'Disc A Level 3 Rate',
-        'discALevel4Rate' => 'Disc A Level 4 Rate',
-        'discALevel5Rate' => 'Disc A Level 5 Rate',
-        'discALevel6Rate' => 'Disc A Level 6 Rate',
-        'discALevel7Rate' => 'Disc A Level 7 Rate',
-        'discALevel8Rate' => 'Disc A Level 8 Rate',
-        'discALevel9Rate' => 'Disc A Level 9 Rate',
-        'discALevel10Rate' => 'Disc A Level 10 Rate',
-        'discALevel1Qty' => 'Disc A Level 1 Qty',
-        'discALevel2Qty' => 'Disc A Level 2 Qty',
-        'discALevel3Qty' => 'Disc A Level 3 Qty',
-        'discALevel4Qty' => 'Disc A Level 4 Qty',
-        'discALevel5Qty' => 'Disc A Level 5 Qty',
-        'discALevel6Qty' => 'Disc A Level 6 Qty',
-        'discALevel7Qty' => 'Disc A Level 7 Qty',
-        'discALevel8Qty' => 'Disc A Level 8 Qty',
-        'discALevel9Qty' => 'Disc A Level 9 Qty',
-        'discALevel10Qty' => 'Disc A Level 10 Qty',
-        'component1Code' => 'Component 1 Code',
-        'component2Code' => 'Component 2 Code',
-        'component3Code' => 'Component 3 Code',
-        'component4Code' => 'Component 4 Code',
-        'component5Code' => 'Component 5 Code',
-        'component6Code' => 'Component 6 Code',
-        'component7Code' => 'Component 7 Code',
-        'component8Code' => 'Component 8 Code',
-        'component9Code' => 'Component 9 Code',
-        'component10Code' => 'Component 10 Code',
-        'component1Qty' => 'Component 1 Qty',
-        'component2Qty' => 'Component 2 Qty',
-        'component3Qty' => 'Component 3 Qty',
-        'component4Qty' => 'Component 4 Qty',
-        'component5Qty' => 'Component 5 Qty',
-        'component6Qty' => 'Component 6 Qty',
-        'component7Qty' => 'Component 7 Qty',
-        'component8Qty' => 'Component 8 Qty',
-        'component9Qty' => 'Component 9 Qty',
-        'component10Qty' => 'Component 10 Qty',
-        'lastDateSynched' => 'Last Date Synched',
-        'parent_product_id' => 'Parent Product ID',
-    ];
-
-    echo '<div class="options_group">';
-    foreach ($custom_fields as $key => $label) {
-        woocommerce_wp_text_input([
-            'id' => $key,
-            'label' => __($label, 'woocommerce'),
-            'desc_tip' => 'true',
-            'description' => __('Enter the ' . $label, 'woocommerce'),
-            'value' => get_post_meta($post->ID, $key, true)
-        ]);
-    }
-    echo '</div>';
-}
-
-add_action('woocommerce_process_product_meta', 'save_custom_fields_to_product');
-
-function save_custom_fields_to_product($post_id)
-{
-    $custom_fields = [
-        'link_to_product',
-        'content',
-        'product_grid_content',
-        'image_url',
-        'sku',
-        'gtin',
-        'ean',
-        'own',
-        'brand',
-        'category',
-        'output',
-        'energy_rating',
-        'scop',
-        'phase',
-        'itemType',
-        'nominalCode',
-        'unitOfSale',
-        'deptNumber',
-        'custom1',
-        'custom2',
-        'custom3',
-        'deletedFlag',
-        'inactiveFlag',
-        'salesPrice',
-        'unitWeight',
-        'taxCode',
-        'qtyAllocated',
-        'qtyInStock',
-        'qtyOnOrder',
-        'stockTakeDate',
-        'stockCat',
-        '_stockCode',
-        'averageCostPrice',
-        'location',
-        'purchaseNominalCode',
-        'lastPurchasePrice',
-        'commodityCode',
-        'barcode',
-        'webDetails',
-        'webDescription',
-        'supplierPartNumber',
-        'recordCreateDate',
-        'recordModifyDate',
-        'supplierRef',
-        'webCategoryA',
-        'webCategoryB',
-        'webCategoryC',
-        'instrastatCommCode',
-        'reorderLevel',
-        'reorderQty',
-        'webPublish',
-        'webSpecialOffer',
-        'webImage',
-        'assemblyLevel',
-        'lastCostPrice',
-        'lastDiscPurchasePrice',
-        'countryCodeOfOrigin',
-        'discALevel1Rate',
-        'discALevel2Rate',
-        'discALevel3Rate',
-        'discALevel4Rate',
-        'discALevel5Rate',
-        'discALevel6Rate',
-        'discALevel7Rate',
-        'discALevel8Rate',
-        'discALevel9Rate',
-        'discALevel10Rate',
-        'discALevel1Qty',
-        'discALevel2Qty',
-        'discALevel3Qty',
-        'discALevel4Qty',
-        'discALevel5Qty',
-        'discALevel6Qty',
-        'discALevel7Qty',
-        'discALevel8Qty',
-        'discALevel9Qty',
-        'discALevel10Qty',
-        'component1Code',
-        'component2Code',
-        'component3Code',
-        'component4Code',
-        'component5Code',
-        'component6Code',
-        'component7Code',
-        'component8Code',
-        'component9Code',
-        'component10Code',
-        'component1Qty',
-        'component2Qty',
-        'component3Qty',
-        'component4Qty',
-        'component5Qty',
-        'component6Qty',
-        'component7Qty',
-        'component8Qty',
-        'component9Qty',
-        'component10Qty',
-        'lastDateSynched',
-        'parent_product_id',
-    ];
-
-    foreach ($custom_fields as $key) {
-        if (isset($_POST[$key])) {
-            update_post_meta($post_id, $key, sanitize_text_field($_POST[$key]));
-        }
-    }
-}
+// OLD SAVE FUNCTION REMOVED - Custom fields now saved via "GoGeothermal Data" tab
+// See includes/product-tab.php for the new implementation
 // END OF THE FUNCTIONALITY TO SHOW THE META DATA ON THE PRODUCT
 
 
@@ -1566,13 +1944,24 @@ function find_or_create_product_category($category_name) {
 }
 
 // Helper function to set featured image from URL
-function set_product_featured_image_from_url($product_id, $image_url) {
-    if (empty($image_url)) {
+function set_product_featured_image_from_url($product_id, $image_path) {
+    if (empty($image_path)) {
+        ggt_log("Empty image path for product {$product_id}", 'IMAGE');
         return false;
     }
     
+    ggt_log("Starting image import for product {$product_id}, path: {$image_path}", 'IMAGE');
+    
+    // If image_path is relative, construct full URL
+    if (!filter_var($image_path, FILTER_VALIDATE_URL)) {
+        $api_base_url = ggt_get_api_base_url();
+        // The API base URL includes /api, so we can directly append the image path
+        $image_path = rtrim($api_base_url, '/') . '/' . ltrim($image_path, '/');
+        ggt_log("Constructed full URL: {$image_path}", 'IMAGE');
+    }
+    
     // Check if the image already exists in media library
-    $attachment_id = attachment_url_to_postid($image_url);
+    $attachment_id = attachment_url_to_postid($image_path);
     
     if (!$attachment_id) {
         // Download and import the image
@@ -1580,102 +1969,119 @@ function set_product_featured_image_from_url($product_id, $image_url) {
         require_once(ABSPATH . 'wp-admin/includes/file.php');
         require_once(ABSPATH . 'wp-admin/includes/image.php');
         
-        $attachment_id = media_sideload_image($image_url, $product_id, null, 'id');
+        ggt_log("Downloading image from: {$image_path}", 'IMAGE');
         
-        if (is_wp_error($attachment_id)) {
+        // First check if the URL is accessible
+        $response = wp_remote_head($image_path);
+        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+            $error_msg = is_wp_error($response) ? $response->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code($response);
+            ggt_log("ERROR: Image not accessible: {$error_msg}", 'IMAGE');
             return false;
         }
+        
+        $attachment_id = media_sideload_image($image_path, $product_id, null, 'id');
+        
+        if (is_wp_error($attachment_id)) {
+            ggt_log("ERROR downloading image: " . $attachment_id->get_error_message(), 'IMAGE');
+            return false;
+        }
+        
+        ggt_log("Image imported successfully, attachment ID: {$attachment_id}", 'IMAGE');
+    } else {
+        ggt_log("Image already exists in library, attachment ID: {$attachment_id}", 'IMAGE');
     }
     
     // Set as featured image
-    return set_post_thumbnail($product_id, $attachment_id);
+    $result = set_post_thumbnail($product_id, $attachment_id);
+    ggt_log("Set featured image result for product {$product_id}: " . ($result ? 'SUCCESS' : 'FAILED') . " (attachment {$attachment_id})", 'IMAGE');
+    return $result;
 }
 
 // WooCommerce Grouped Product Functions
-function find_or_create_grouped_product($parent_product_id) {
-    if (empty($parent_product_id)) {
-        return null;
-    }
+// function find_or_create_grouped_product($parent_product_id) {
+//     if (empty($parent_product_id)) {
+//         return null;
+//     }
     
-    // Search for existing grouped product with this parent_product_id in meta
-    $existing_groups = get_posts(array(
-        'post_type' => 'product',
-        'meta_query' => array(
-            array(
-                'key' => '_parent_product_id',
-                'value' => $parent_product_id,
-                'compare' => '='
-            )
-        ),
-        'post_status' => 'any',
-        'posts_per_page' => 1
-    ));
+//     // Search for existing grouped product with this parent_product_id in meta
+//     $existing_groups = get_posts(array(
+//         'post_type' => 'product',
+//         'meta_query' => array(
+//             array(
+//                 'key' => '_parent_product_id',
+//                 'value' => $parent_product_id,
+//                 'compare' => '='
+//             )
+//         ),
+//         'post_status' => 'any',
+//         'posts_per_page' => 1
+//     ));
     
-    if (!empty($existing_groups)) {
-        $group_product = wc_get_product($existing_groups[0]->ID);
-        // Ensure it's actually a grouped product
-        if ($group_product && $group_product->is_type('grouped')) {
-            return $existing_groups[0]->ID;
-        }
-    }
+//     if (!empty($existing_groups)) {
+//         $group_product = wc_get_product($existing_groups[0]->ID);
+//         // Ensure it's actually a grouped product
+//         if ($group_product && $group_product->is_type('grouped')) {
+//             return $existing_groups[0]->ID;
+//         }
+//     }
     
-    // Create new grouped product
-    $grouped_product = new WC_Product_Grouped();
-    $grouped_product->set_name('Group: ' . $parent_product_id);
-    $grouped_product->set_status('publish');
-    $grouped_product->set_catalog_visibility('visible');
+//     // Create new grouped product
+//     $grouped_product = new WC_Product_Grouped();
+//     $grouped_product->set_name('Group: ' . $parent_product_id);
+//     $grouped_product->set_status('publish');
+//     $grouped_product->set_catalog_visibility('visible');
     
-    // Save the grouped product
-    $group_id = $grouped_product->save();
+//     // Save the grouped product
+//     $group_id = $grouped_product->save();
     
-    if ($group_id) {
-        // Store the parent_product_id as meta for future reference
-        update_post_meta($group_id, '_parent_product_id', $parent_product_id);
-        return $group_id;
-    }
+//     if ($group_id) {
+//         // Store the parent_product_id as meta for future reference
+//         update_post_meta($group_id, '_parent_product_id', $parent_product_id);
+//         return $group_id;
+//     }
     
-    error_log('GGT Plugin: Failed to create grouped product for parent_product_id: ' . $parent_product_id);
-    return null;
-}
+//     error_log('GGT Plugin: Failed to create grouped product for parent_product_id: ' . $parent_product_id);
+//     return null;
+// }
 
-function add_product_to_group($product_id, $group_id) {
-    if (!$product_id || !$group_id) {
-        return false;
-    }
+// function add_product_to_group($product_id, $group_id) {
+//     if (!$product_id || !$group_id) {
+//         return false;
+//     }
     
-    $grouped_product = wc_get_product($group_id);
-    if (!$grouped_product || !$grouped_product->is_type('grouped')) {
-        error_log('GGT Plugin: Group product not found or not grouped type. Group ID: ' . $group_id);
-        return false;
-    }
+//     $grouped_product = wc_get_product($group_id);
+//     if (!$grouped_product || !$grouped_product->is_type('grouped')) {
+//         error_log('GGT Plugin: Group product not found or not grouped type. Group ID: ' . $group_id);
+//         return false;
+//     }
     
-    // Get current children
-    $current_children = $grouped_product->get_children();
+//     // Get current children
+//     $current_children = $grouped_product->get_children();
     
-    // Add this product if not already in the group
-    if (!in_array($product_id, $current_children)) {
-        $current_children[] = $product_id;
-        $grouped_product->set_children($current_children);
-        $result = $grouped_product->save();
+//     // Add this product if not already in the group
+//     if (!in_array($product_id, $current_children)) {
+//         $current_children[] = $product_id;
+//         $grouped_product->set_children($current_children);
+//         $result = $grouped_product->save();
         
-        if (!$result) {
-            error_log('GGT Plugin: Failed to save grouped product children for group ID: ' . $group_id);
-            return false;
-        }
+//         if (!$result) {
+//             error_log('GGT Plugin: Failed to save grouped product children for group ID: ' . $group_id);
+//             return false;
+//         }
         
-        // Also store the group relationship in the child product's meta
-        update_post_meta($product_id, '_grouped_parent_id', $group_id);
-    }
+//         // Also store the group relationship in the child product's meta
+//         update_post_meta($product_id, '_grouped_parent_id', $group_id);
+//     }
     
-    return true;
-}
+//     return true;
+// }
 
-function handle_product_grouping($product_id, $product_data) {
-    if (empty($product_data['parent_product_id'])) {
-        return;
-    }
+// function handle_product_grouping($product_id, $product_data) {
+//     if (empty($product_data['parent_product_id'])) {
+//         return;
+//     }
     
-    $parent_product_id = $product_data['parent_product_id'];
+//     $parent_product_id = $product_data['parent_product_id'];
     
 /**
  * Resolve a stockCode to a product ID.
@@ -1725,43 +2131,73 @@ function is_acf_pro_active() {
  * and optionally an `IsRequired` flag. Uses plugin options to determine ACF field names/keys.
  */
 function relate_products_via_acf($product_id, $product_data) {
+    ggt_log("Starting ACF processing for product {$product_id}", 'ACF');
+    
     // Only run if ACF Pro is installed and active
     if (!is_acf_pro_active()) {
+        ggt_log("ACF Pro not active for product {$product_id}", 'ACF');
         return;
     }
 
-    // Only run if enabled in options
-    if (!get_option('ggt_import_enable_acf_relate')) {
+    // Check if enabled in options
+    $acf_enabled = get_option('ggt_import_enable_acf_relate');
+    ggt_log("ACF relate option value: " . var_export($acf_enabled, true), 'ACF');
+    
+    if (!$acf_enabled) {
+        ggt_log("ACF relate not enabled in options for product {$product_id}. Go to Admin → Go Geothermal → Settings and check 'Enable ACF relating during import'", 'ACF');
         return;
     }
 
     $related_field = get_option('ggt_import_acf_related_field');
     $required_field = get_option('ggt_import_acf_required_field');
 
+    ggt_log("Product {$product_id}: ACF field names - related_field='{$related_field}', required_field='{$required_field}'", 'ACF');
+
     // If nothing configured, bail
     if (empty($related_field) && empty($required_field)) {
+        ggt_log("No ACF fields configured for product {$product_id}", 'ACF');
         return;
     }
+    
+    // Log what data we received
+    $has_related = isset($product_data['RelatedProducts']) || isset($product_data['RelatedProduct']);
+    $has_required = isset($product_data['IsRequired']);
+    ggt_log("Product {$product_id} data: has RelatedProducts=" . ($has_related ? 'yes' : 'no') . ", has IsRequired=" . ($has_required ? 'yes' : 'no'), 'ACF');
 
     // Handle related products: parse incoming codes and merge with existing related IDs, avoiding duplicates
     $incoming_related_ids = array();
-    if (!empty($product_data['RelatedProduct'])) {
+    // Check for both RelatedProducts (from API) and RelatedProduct (legacy)
+    $related_raw = !empty($product_data['RelatedProducts']) ? $product_data['RelatedProducts'] : 
+                   (!empty($product_data['RelatedProduct']) ? $product_data['RelatedProduct'] : '');
+    
+    if (!empty($related_raw)) {
+        ggt_log("Product {$product_id}: RelatedProducts raw value: {$related_raw}", 'ACF');
         // Normalize delimiters (comma or pipe)
-        $raw = $product_data['RelatedProduct'];
-        $parts = preg_split('/[,|\\|\|]+/', $raw);
+        $parts = preg_split('/[,|\\|\|]+/', $related_raw);
+        ggt_log("Product {$product_id}: Split into " . count($parts) . " parts", 'ACF');
+        
         foreach ($parts as $p) {
             $code = trim($p);
             if (empty($code)) continue;
             $id = stockcode_to_product_id($code);
-            if ($id) $incoming_related_ids[] = $id;
+            if ($id) {
+                $incoming_related_ids[] = $id;
+                ggt_log("Product {$product_id}: Found stock code '{$code}' -> product ID {$id}", 'ACF');
+            } else {
+                ggt_log("Product {$product_id}: Could NOT find product with stock code '{$code}'", 'ACF');
+            }
         }
+    } else {
+        ggt_log("Product {$product_id}: No RelatedProducts data found in product_data", 'ACF');
     }
 
     if (!empty($related_field) && !empty($incoming_related_ids)) {
+        ggt_log("Product {$product_id}: Found " . count($incoming_related_ids) . " related product IDs: " . implode(', ', $incoming_related_ids), 'ACF');
         // Get existing related IDs (ACF or postmeta)
         $existing_related = array();
         if (function_exists('get_field')) {
             $existing = get_field($related_field, $product_id);
+            ggt_log("Product {$product_id}: get_field('{$related_field}') returned: " . (is_array($existing) ? 'array with ' . count($existing) . ' items' : gettype($existing)), 'ACF');
             if (is_array($existing)) {
                 // ACF relationship may return array of post objects or IDs
                 foreach ($existing as $e) {
@@ -1790,12 +2226,23 @@ function relate_products_via_acf($product_id, $product_data) {
         // Merge and dedupe
         $merged = array_values(array_unique(array_merge($existing_related, $incoming_related_ids)));
 
+        ggt_log("Product {$product_id}: Merged related products: " . implode(', ', $merged), 'ACF');
+
         // Save merged list via ACF if available, otherwise postmeta
         if (function_exists('update_field')) {
-            update_field($related_field, $merged, $product_id);
+            ggt_log("Product {$product_id}: About to update_field('{$related_field}') with " . count($merged) . " IDs: " . implode(',', $merged), 'ACF');
+            $result = update_field($related_field, $merged, $product_id);
+            ggt_log("Product {$product_id}: Updated ACF field '{$related_field}' - " . ($result ? 'SUCCESS' : 'FAILED'), 'ACF');
+            
+            // Verify it was saved
+            $verify = get_field($related_field, $product_id);
+            ggt_log("Product {$product_id}: Verification get_field('{$related_field}') returned: " . (is_array($verify) ? 'array with ' . count($verify) . ' items' : gettype($verify)), 'ACF');
         } else {
             update_post_meta($product_id, $related_field, maybe_serialize($merged));
+            ggt_log("Product {$product_id}: Updated postmeta '{$related_field}'", 'ACF');
         }
+    } elseif (!empty($related_field)) {
+        ggt_log("Product {$product_id}: No related products to save (related_raw was: " . (!empty($related_raw) ? $related_raw : 'empty') . ")", 'ACF');
     }
 
     // Handle required flag (truthy values in product_data)
@@ -1813,6 +2260,4 @@ function relate_products_via_acf($product_id, $product_data) {
         }
     }
 }
-}
-
 
