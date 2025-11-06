@@ -1955,9 +1955,26 @@ function set_product_featured_image_from_url($product_id, $image_path) {
     // If image_path is relative, construct full URL
     if (!filter_var($image_path, FILTER_VALIDATE_URL)) {
         $api_base_url = ggt_get_api_base_url();
-        // The API base URL includes /api, so we can directly append the image path
-        $image_path = rtrim($api_base_url, '/') . '/' . ltrim($image_path, '/');
-        ggt_log("Constructed full URL: {$image_path}", 'IMAGE');
+
+        // Derive host by stripping trailing /api from base (eg: https://api-staging.gogeothermal.uk)
+        $api_host = rtrim($api_base_url, '/');
+        $api_host = preg_replace('#/api$#', '', $api_host);
+
+        // Normalize incoming relative path
+        // - Our DB stores: products/product_....ext
+        // - Legacy values may be: product-images/....ext
+        $relative = ltrim($image_path, '/');
+        if (strpos($relative, 'product-images/') === 0) {
+            $relative = 'products/' . basename($relative); // map old folder to new and flatten to filename
+        } elseif (basename($relative) === $relative) {
+            // It's just a filename -> assume products/
+            $relative = 'products/' . $relative;
+        }
+
+        // Build direct public storage URL served by Laravel storage symlink
+        // Example: https://api-staging.gogeothermal.uk/storage/products/product_STOCKCODE_123.png
+        $image_path = rtrim($api_host, '/') . '/storage/' . $relative;
+        ggt_log("Constructed storage URL: {$image_path}", 'IMAGE');
     }
     
     // Check if the image already exists in media library
