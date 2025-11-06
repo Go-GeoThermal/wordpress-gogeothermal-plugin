@@ -420,6 +420,9 @@ function ggt_execute_flexible_import() {
     if (!current_user_can('manage_options')) {
         wp_send_json_error('Unauthorized', 401);
     }
+    if (!get_option('ggt_plugin_enabled', 1)) {
+        wp_send_json_error('Plugin is disabled', 403);
+    }
 
     $token = ggt_get_decrypted_token();
     if (!$token) {
@@ -521,6 +524,14 @@ function ggt_execute_flexible_import() {
             $errors[] = 'Error processing product: ' . $e->getMessage();
         }
     }
+
+    // Persist last import summary for dashboard
+    update_option('ggt_last_product_import', array(
+        'updated' => $updated,
+        'created' => $created,
+        'skipped' => $skipped,
+        'timestamp' => time(),
+    ));
 
     wp_send_json_success(array(
         'updated' => $updated,

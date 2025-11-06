@@ -49,6 +49,9 @@ if (!function_exists('ggt_sinappsus_connect_to_api')) {
         $token = ggt_get_decrypted_token();
         if (!$token) {
             ggt_log_api_interaction('API authentication token not available', 'error', ['endpoint' => $endpoint]);
+            // Flag admin notice to prompt re-authentication
+            update_option('ggt_auth_required', 1);
+            update_option('ggt_last_auth_error_at', time());
             return ['error' => 'Authentication token not available'];
         }
         
@@ -125,6 +128,11 @@ if (!function_exists('ggt_sinappsus_connect_to_api')) {
                 $response_data['status_code'] = $status_code;
                 return $response_data;
             }
+            // If unauthorized, flag admin to re-authenticate
+            if ($status_code === 401) {
+                update_option('ggt_auth_required', 1);
+                update_option('ggt_last_auth_error_at', time());
+            }
             
             ggt_log_api_interaction('API error response', 'error', [
                 'endpoint' => $endpoint,
@@ -139,6 +147,10 @@ if (!function_exists('ggt_sinappsus_connect_to_api')) {
             ];
         }
 
+        // Clear auth-required flag on successful authenticated response
+        if (get_option('ggt_auth_required')) {
+            delete_option('ggt_auth_required');
+        }
         return $decoded_body ? $decoded_body : $body;
     }
 }

@@ -78,55 +78,121 @@ class Sinappsus_GGT_Admin_UI
     {
         $token_exists = get_token() ? true : false;
         $selected_env = get_option('ggt_sinappsus_environment', 'production');
+        $plugin_enabled = (bool) get_option('ggt_plugin_enabled', 1);
+        $last_product_import = get_option('ggt_last_product_import');
+        $last_user_sync = get_option('ggt_last_user_sync');
 ?>
         <div class="wrap">
             <h1>Go Geothermal Settings</h1>
-            <form method="post" action="options.php" style="display: <?php echo $token_exists ? 'none' : 'block'; ?>">
-                <?php
-                settings_fields('ggt_sinappsus_settings_group');
-                do_settings_sections('ggt_sinappsus_settings_group');
-                ?>
-                <table class="form-table">
-                    <tr valign="top">
-                        <th scope="row">Environment</th>
-                        <td>
-                            <select name="ggt_sinappsus_environment">
-                                <option value="production" <?php selected($selected_env, 'production'); ?>>Production</option>
-                                <option value="staging" <?php selected($selected_env, 'staging'); ?>>Staging/Testing</option>
-                            </select>
-                            <p class="description">Select the API environment to connect to.</p>
-                        </td>
-                    </tr>
-                    <tr valign="top">
-                        <th scope="row">Email</th>
-                        <td><input type="text" name="ggt_sinappsus_email" value="<?php echo esc_attr(get_option('ggt_sinappsus_email')); ?>" /></td>
-                    </tr>
-                    <tr valign="top">
-                        <th scope="row">Password</th>
-                        <td><input type="password" name="ggt_sinappsus_password" value="<?php echo esc_attr(get_option('ggt_sinappsus_password')); ?>" /></td>
-                    </tr>
-                </table>
-                <p class="submit">
-                    <button type="button" id="authenticate-button" class="button button-primary">Authenticate</button>
-                    <button type="button" id="validate-button" class="button">Validate</button>
-                    <button type="button" id="renew-button" class="button">Renew Token</button>
-                    <?php submit_button(); ?>
-                </p>
-                <p id="timer"></p>
-                <p id="message"></p>
-            </form>
-            <div id="additional-actions" style="display: <?php echo $token_exists ? 'block' : 'none'; ?>">
-                <h2>Product Actions</h2>
+            
+            <!-- Tabs Navigation -->
+            <h2 class="nav-tab-wrapper" id="ggt-tabs-nav">
+                <a href="#dashboard" class="nav-tab nav-tab-active">Dashboard</a>
+                <a href="#auth" class="nav-tab">Authentication</a>
+                <a href="#products" class="nav-tab">Products</a>
+                <a href="#users" class="nav-tab">Users</a>
+                <a href="#settings" class="nav-tab">Settings</a>
+            </h2>
+
+            <!-- Tabs Content -->
+            <div id="ggt-tab-dashboard" class="ggt-tab-panel" style="display:block;">
+                <h2>Dashboard</h2>
+                <form method="post" action="options.php" style="margin-bottom:20px;">
+                    <?php settings_fields('ggt_sinappsus_dashboard_group'); ?>
+                    <table class="form-table">
+                        <tr valign="top">
+                            <th scope="row">Plugin Enabled</th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="ggt_plugin_enabled" value="1" <?php checked(1, $plugin_enabled, true); ?> />
+                                    Enable Go Geothermal plugin features
+                                </label>
+                                <p class="description">Toggle to temporarily disable this plugin's frontend/admin behaviors without uninstalling.</p>
+                            </td>
+                        </tr>
+                    </table>
+                    <?php submit_button('Save Dashboard Settings'); ?>
+                </form>
+                <div class="card" style="max-width:800px;">
+                    <h3>Last Product Import</h3>
+                    <?php if (!empty($last_product_import) && is_array($last_product_import)): ?>
+                        <p>Created: <strong><?php echo intval($last_product_import['created'] ?? 0); ?></strong>, Updated: <strong><?php echo intval($last_product_import['updated'] ?? 0); ?></strong>, Skipped: <strong><?php echo intval($last_product_import['skipped'] ?? 0); ?></strong></p>
+                        <p>When: <em><?php echo isset($last_product_import['timestamp']) ? human_time_diff(intval($last_product_import['timestamp']), current_time('timestamp')) . ' ago' : 'N/A'; ?></em></p>
+                    <?php else: ?>
+                        <p>No product import has been recorded yet.</p>
+                    <?php endif; ?>
+                </div>
+                <div class="card" style="max-width:800px; margin-top:15px;">
+                    <h3>Last User Sync</h3>
+                    <?php if (!empty($last_user_sync) && is_array($last_user_sync)): ?>
+                        <p>Processed: <strong><?php echo intval($last_user_sync['total'] ?? 0); ?></strong>, Updated: <strong><?php echo intval($last_user_sync['updated'] ?? 0); ?></strong>, Failed: <strong><?php echo intval($last_user_sync['failed'] ?? 0); ?></strong></p>
+                        <p>When: <em><?php echo isset($last_user_sync['timestamp']) ? human_time_diff(intval($last_user_sync['timestamp']), current_time('timestamp')) . ' ago' : 'N/A'; ?></em></p>
+                    <?php else: ?>
+                        <p>No user sync has been recorded yet.</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <div id="ggt-tab-auth" class="ggt-tab-panel" style="display:none;">
+                <h2>Authentication</h2>
+                <p><?php echo $token_exists ? '<span style="color:green;">Token present</span>' : '<span style="color:#cc0000;">Not authenticated</span>'; ?></p>
+                <form method="post" action="options.php">
+                    <?php settings_fields('ggt_sinappsus_auth_group'); ?>
+                    <table class="form-table">
+                        <tr valign="top">
+                            <th scope="row">Environment</th>
+                            <td>
+                                <select name="ggt_sinappsus_environment">
+                                    <option value="production" <?php selected($selected_env, 'production'); ?>>Production</option>
+                                    <option value="staging" <?php selected($selected_env, 'staging'); ?>>Staging/Testing</option>
+                                </select>
+                                <p class="description">Select the API environment to connect to.</p>
+                            </td>
+                        </tr>
+                        <tr valign="top">
+                            <th scope="row">Email</th>
+                            <td><input type="text" name="ggt_sinappsus_email" value="<?php echo esc_attr(get_option('ggt_sinappsus_email')); ?>" /></td>
+                        </tr>
+                        <tr valign="top">
+                            <th scope="row">Password</th>
+                            <td><input type="password" name="ggt_sinappsus_password" value="<?php echo esc_attr(get_option('ggt_sinappsus_password')); ?>" /></td>
+                        </tr>
+                    </table>
+                    <p class="submit">
+                        <button type="button" id="authenticate-button" class="button button-primary">Authenticate</button>
+                        <button type="button" id="validate-button" class="button">Validate</button>
+                        <button type="button" id="renew-button" class="button">Renew Token</button>
+                        <?php submit_button('Save Auth Settings', 'secondary', 'submit', false); ?>
+                    </p>
+                    <p id="timer"></p>
+                    <p id="message"></p>
+                </form>
                 <div class="action-item">
-                    <button type="button" id="clear-products-button" class="button button-secondary">Clear All Products</button>
+                    <button type="button" id="reset-token-button" class="button">Reset Token</button>
+                    <p class="description">This will reset the current token and show the login form again.</p>
+                </div>
+            </div>
+
+            <div id="ggt-tab-products" class="ggt-tab-panel" style="display:none;">
+                <h2>Product Actions</h2>
+                <?php if (!$plugin_enabled): ?>
+                    <div class="notice notice-warning"><p>The plugin is currently disabled. Enable it on the Dashboard tab to unlock product actions.</p></div>
+                <?php endif; ?>
+                <?php if (!$token_exists): ?>
+                    <div class="notice notice-error"><p>You're not authenticated. Go to the Authentication tab to sign in and obtain a token.</p></div>
+                <?php endif; ?>
+                <div class="action-item">
+                    <button type="button" id="clear-products-button" class="button button-secondary" <?php disabled(!$token_exists || !$plugin_enabled); ?>>Clear All Products</button>
                     <p class="description">This will remove all products from the database.</p>
                 </div>
                 <div class="action-item">
-                    <button type="button" id="configure-import-button" class="button button-primary">Configure Field Mapping</button>
+                    <button type="button" id="configure-import-button" class="button button-primary" <?php disabled(!$token_exists || !$plugin_enabled); ?>>Configure Field Mapping</button>
                     <p class="description">Map API fields to WooCommerce product fields before importing.</p>
                 </div>
-                
-             
+                <div class="action-item" style="display: none;">
+                    <button type="button" id="sync-products-button" class="button" <?php disabled(!$token_exists || !$plugin_enabled); ?>>Sync All Products</button>
+                    <p class="description">Fetch products from API, updating existing by Stock Code or SKU and creating new ones if active.</p>
+                </div>
                 <!-- Progress container for sync process -->
                 <div id="sync-progress-container" style="display:none; margin-top: 15px;">
                     <div class="sync-status-message"></div>
@@ -138,15 +204,56 @@ class Sinappsus_GGT_Admin_UI
                         (<span class="sync-success-count">0</span> updated, <span class="sync-skip-count">0</span> skipped)
                     </div>
                 </div>
+
+                <div class="card" style="margin-top:20px; max-width:1000px;">
+                    <h3>Current Product Field Mapping</h3>
+                    <?php 
+                        $prod_mapping = get_option('ggt_product_field_mapping', array());
+                        $prod_enabled = get_option('ggt_product_field_mapping_enabled', array());
+                    ?>
+                    <?php if (empty($prod_mapping)): ?>
+                        <p>No product field mapping configured yet.</p>
+                    <?php else: ?>
+                        <div style="overflow-x:auto;">
+                            <table class="wp-list-table widefat fixed striped" style="min-width:600px;">
+                                <thead>
+                                    <tr>
+                                        <th>API Field</th>
+                                        <th>Mapped To (WooCommerce)</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($prod_mapping as $api_field => $wc_field): 
+                                        $is_enabled = !isset($prod_enabled[$api_field]) || (bool)$prod_enabled[$api_field];
+                                    ?>
+                                        <tr>
+                                            <td><code><?php echo esc_html($api_field); ?></code></td>
+                                            <td><?php echo esc_html($wc_field); ?></td>
+                                            <td><?php echo $is_enabled ? '<span style="color:green;">Enabled</span>' : '<span style="color:#666;">Disabled</span>'; ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
-            <div id="user-actions" style="display: <?php echo $token_exists ? 'block' : 'none'; ?>">
+
+            <div id="ggt-tab-users" class="ggt-tab-panel" style="display:none;">
                 <h2>User Actions</h2>
+                <?php if (!$plugin_enabled): ?>
+                    <div class="notice notice-warning"><p>The plugin is currently disabled. Enable it on the Dashboard tab to unlock user actions.</p></div>
+                <?php endif; ?>
+                <?php if (!$token_exists): ?>
+                    <div class="notice notice-error"><p>You're not authenticated. Go to the Authentication tab to sign in and obtain a token.</p></div>
+                <?php endif; ?>
                 <div class="action-item">
-                    <button type="button" id="configure-user-mapping-button" class="button button-primary">Configure User Field Mapping</button>
+                    <button type="button" id="configure-user-mapping-button" class="button button-primary" <?php disabled(!$token_exists || !$plugin_enabled); ?>>Configure User Field Mapping</button>
                     <p class="description">Map API account fields to WordPress/WooCommerce and control which fields show on registration.</p>
                 </div>
                 <div class="action-item">
-                    <button type="button" id="sync-users-button" class="button button-secondary">Sync All Users</button>
+                    <button type="button" id="sync-users-button" class="button button-secondary" <?php disabled(!$token_exists || !$plugin_enabled); ?>>Sync All Users</button>
                     <p class="description">This will synchronize all users with the Sage system.</p>
                 </div>
                 <!-- Progress container for user sync process -->
@@ -161,17 +268,47 @@ class Sinappsus_GGT_Admin_UI
                     </div>
                 </div>
                 <div class="action-item">
-                    <button type="button" id="delete-users-button" class="button button-secondary">Delete All Users</button>
+                    <button type="button" id="delete-users-button" class="button button-secondary" <?php disabled(!$token_exists || !$plugin_enabled); ?>>Delete All Users</button>
                     <p class="description">This will remove all users from the database.</p>
                 </div>
-                <div class="action-item">
-                    <button type="button" id="reset-token-button" class="button">Reset Token</button>
-                    <p class="description">This will reset the current token and show the login form again.</p>
-                </div>
 
+                <div class="card" style="margin-top:20px; max-width:1000px;">
+                    <h3>Current User/Account Field Mapping</h3>
+                    <?php 
+                        $usr_mapping = get_option('ggt_user_field_mapping', array());
+                        if (is_object($usr_mapping)) { $usr_mapping = (array)$usr_mapping; }
+                        $usr_enabled = get_option('ggt_user_field_mapping_enabled', array());
+                    ?>
+                    <?php if (empty($usr_mapping)): ?>
+                        <p>No user/account field mapping configured yet.</p>
+                    <?php else: ?>
+                        <div style="overflow-x:auto;">
+                            <table class="wp-list-table widefat fixed striped" style="min-width:600px;">
+                                <thead>
+                                    <tr>
+                                        <th>API Field</th>
+                                        <th>Mapped To (User Meta / Field)</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($usr_mapping as $api_field => $target): 
+                                        $is_enabled = !isset($usr_enabled[$api_field]) || (bool)$usr_enabled[$api_field];
+                                    ?>
+                                        <tr>
+                                            <td><code><?php echo esc_html($api_field); ?></code></td>
+                                            <td><?php echo esc_html(is_array($target) ? json_encode($target) : $target); ?></td>
+                                            <td><?php echo $is_enabled ? '<span style="color:green;">Enabled</span>' : '<span style="color:#666;">Disabled</span>'; ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
 
-            <div style="display: <?php echo $token_exists ? 'block' : 'none'; ?>">
+            <div id="ggt-tab-settings" class="ggt-tab-panel" style="display:none;">
                 <h2>Registration & Import Settings</h2>
                 <form method="post" action="options.php">
                     <?php
@@ -369,6 +506,28 @@ class Sinappsus_GGT_Admin_UI
 
         <script type="text/javascript">
             document.addEventListener('DOMContentLoaded', function() {
+                // --- Simple tab navigation ---
+                (function(){
+                    const nav = document.getElementById('ggt-tabs-nav');
+                    if (!nav) return;
+                    const tabs = nav.querySelectorAll('.nav-tab');
+                    const panels = {
+                        '#dashboard': document.getElementById('ggt-tab-dashboard'),
+                        '#auth': document.getElementById('ggt-tab-auth'),
+                        '#products': document.getElementById('ggt-tab-products'),
+                        '#users': document.getElementById('ggt-tab-users'),
+                        '#settings': document.getElementById('ggt-tab-settings')
+                    };
+                    function activate(hash){
+                        const target = panels[hash] ? hash : '#dashboard';
+                        Object.keys(panels).forEach(h => { if(panels[h]) panels[h].style.display = (h===target)?'block':'none'; });
+                        tabs.forEach(t => { t.classList.toggle('nav-tab-active', t.getAttribute('href')===target); });
+                        if (history && history.replaceState) history.replaceState(null, '', target);
+                    }
+                    tabs.forEach(t => t.addEventListener('click', function(e){ e.preventDefault(); activate(this.getAttribute('href')); }));
+                    activate(location.hash || '#dashboard');
+                })();
+
                 function getToken() {
                     return new Promise((resolve, reject) => {
                         jQuery.post(ajaxurl, {
@@ -419,8 +578,9 @@ class Sinappsus_GGT_Admin_UI
                                         }, function(response) {
                                             if (response.success) {
                                                 document.getElementById('message').innerText = 'Authentication successful!';
-                                                document.getElementById('additional-actions').style.display = 'block';
-                                                document.getElementById('user-actions').style.display = 'block';
+                                                // Switch to Products tab after authentication
+                                                const tab = document.querySelector('#ggt-tabs-nav a[href="#products"]');
+                                                if (tab) tab.click();
                                             } else {
                                                 document.getElementById('message').innerText = 'Failed to store token!';
                                             }
@@ -531,6 +691,13 @@ class Sinappsus_GGT_Admin_UI
                                             document.querySelector('.user-sync-status-message').innerText = 'Synchronization complete!';
                                             document.getElementById('message').innerText = 'Users synchronized successfully! Updated: ' + 
                                                 successCount + ', Failed: ' + errorCount;
+                                            // Store summary for dashboard
+                                            jQuery.post(ajaxurl, {
+                                                action: 'ggt_store_last_user_sync',
+                                                updated: successCount,
+                                                failed: errorCount,
+                                                total: total
+                                            });
                                             
                                             // Hide the progress container after 20 seconds
                                             setTimeout(function() {
@@ -706,6 +873,13 @@ class Sinappsus_GGT_Admin_UI
                                                 document.querySelector('.sync-status-message').innerText = 'Synchronization complete!';
                                                 document.getElementById('message').innerText = 'Products synchronized successfully! Updated: ' + 
                                                     successCount + ', Skipped: ' + skipCount;
+                                                // Store summary for dashboard
+                                                jQuery.post(ajaxurl, {
+                                                    action: 'ggt_store_last_product_sync',
+                                                    updated: successCount,
+                                                    skipped: skipCount,
+                                                    total: total
+                                                });
                                                 
                                                 // Hide the progress container after 20 seconds
                                                 setTimeout(function() {
@@ -813,11 +987,9 @@ class Sinappsus_GGT_Admin_UI
                             .then(data => {
                                 if (data.success) {
                                     document.getElementById('message').innerText = 'Token reset successfully!';
-                                    // Hide action sections and show login form
-                                    document.getElementById('additional-actions').style.display = 'none';
-                                    document.getElementById('user-actions').style.display = 'none';
-                                    document.querySelector('form').style.display = 'block';
-                                    document.querySelector('.action-item[style*="block"]').style.display = 'none';
+                                    // Navigate to Authentication tab
+                                    const tab = document.querySelector('#ggt-tabs-nav a[href="#auth"]');
+                                    if (tab) tab.click();
                                 } else {
                                     document.getElementById('message').innerText = 'Failed to reset token!';
                                 }
@@ -1015,26 +1187,36 @@ class Sinappsus_GGT_Admin_UI
                             }
 
                             let html = '<div style="border:1px solid #ddd; padding:10px; background:#fff;">';
-                            html += '<h4>Sample Products (' + previewRes.data.products.length + ' shown)</h4>';
-                            html += '<table class="wp-list-table widefat fixed striped"><thead><tr>';
-                            
-                            availableAPIFields.slice(0, 5).forEach(field => {
-                                html += '<th>' + field + '</th>';
-                            });
-                            
+                            // Pivoted preview: rows are fields; columns are first 3 samples
+                            const samples = (previewRes.data.products || []).slice(0, 3);
+                            const sampleCount = samples.length;
+                            html += '<h4>Field values for first ' + sampleCount + ' product(s)</h4>';
+                            html += '<div style="overflow-x:auto; max-width:100%;">';
+                            html += '<table class="wp-list-table widefat fixed striped" style="min-width:720px;">';
+                            html += '<thead><tr>';
+                            html += '<th style="width:280px;">Field</th>';
+                            for (let i = 0; i < sampleCount; i++) {
+                                html += '<th>Sample ' + (i + 1) + '</th>';
+                            }
                             html += '</tr></thead><tbody>';
-                            
-                            previewRes.data.products.forEach(product => {
+
+                            availableAPIFields.forEach(field => {
                                 html += '<tr>';
-                                availableAPIFields.slice(0, 5).forEach(field => {
-                                    let value = product[field] || '';
+                                html += '<td><code>' + field + '</code></td>';
+                                for (let i = 0; i < sampleCount; i++) {
+                                    const product = samples[i] || {};
+                                    let value = product[field];
+                                    if (value === undefined || value === null) value = '';
                                     if (typeof value === 'object') value = JSON.stringify(value);
-                                    html += '<td>' + String(value).substring(0, 50) + '</td>';
-                                });
+                                    const safeTitle = String(value).replace(/\"/g, '&quot;');
+                                    html += '<td style="max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + safeTitle + '">' + String(value) + '</td>';
+                                }
                                 html += '</tr>';
                             });
-                            
-                            html += '</tbody></table></div>';
+
+                            html += '</tbody></table>';
+                            html += '</div>';
+                            html += '</div>';
                             html += '<p style="margin-top:15px;"><button type="button" id="proceed-to-mapping" class="button button-primary">Next: Configure Field Mapping</button></p>';
                             
                             document.getElementById('preview-results').innerHTML = html;
@@ -1429,15 +1611,20 @@ add_action('admin_init', 'ggt_sinappsus_register_settings');
 
 function ggt_sinappsus_register_settings()
 {
-    register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_email');
-    register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_password');
+    // Settings tab (registration & import)
     register_setting('ggt_sinappsus_settings_group', 'ggt_enable_additional_registration_fields');
     register_setting('ggt_sinappsus_settings_group', 'ggt_registration_two_columns');
-    register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_environment');
-    // Import relating options
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_enable_acf_relate');
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_acf_required_field');
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_acf_related_field');
+
+    // Dashboard tab
+    register_setting('ggt_sinappsus_dashboard_group', 'ggt_plugin_enabled');
+
+    // Authentication tab
+    register_setting('ggt_sinappsus_auth_group', 'ggt_sinappsus_environment');
+    register_setting('ggt_sinappsus_auth_group', 'ggt_sinappsus_email');
+    register_setting('ggt_sinappsus_auth_group', 'ggt_sinappsus_password');
 }
 
 add_action('wp_ajax_clear_all_products', 'clear_all_products');
@@ -1447,6 +1634,11 @@ add_action('wp_ajax_create_product', 'create_product');
 add_action('wp_ajax_sync_user', 'sync_user');
 add_action('wp_ajax_delete_all_users', 'delete_all_users');
 add_action('wp_ajax_reset_token', 'reset_token');
+// Store last sync/import summaries
+add_action('wp_ajax_ggt_store_last_user_sync', 'ggt_store_last_user_sync');
+add_action('wp_ajax_ggt_store_last_product_sync', 'ggt_store_last_product_sync');
+// Dismiss admin auth notice
+add_action('wp_ajax_ggt_dismiss_auth_notice', 'ggt_dismiss_auth_notice');
 
 function reset_token()
 {
@@ -1458,12 +1650,55 @@ function reset_token()
     wp_send_json_success();
 }
 
+function ggt_store_last_user_sync() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized', 401);
+    }
+    $updated = isset($_POST['updated']) ? intval($_POST['updated']) : 0;
+    $failed = isset($_POST['failed']) ? intval($_POST['failed']) : 0;
+    $total = isset($_POST['total']) ? intval($_POST['total']) : ($updated + $failed);
+    update_option('ggt_last_user_sync', array(
+        'updated' => $updated,
+        'failed' => $failed,
+        'total' => $total,
+        'timestamp' => time(),
+    ));
+    wp_send_json_success();
+}
+
+function ggt_store_last_product_sync() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized', 401);
+    }
+    $updated = isset($_POST['updated']) ? intval($_POST['updated']) : 0;
+    $skipped = isset($_POST['skipped']) ? intval($_POST['skipped']) : 0;
+    $total = isset($_POST['total']) ? intval($_POST['total']) : ($updated + $skipped);
+    update_option('ggt_last_product_import', array(
+        'created' => 0, // unknown for sync flow
+        'updated' => $updated,
+        'skipped' => $skipped,
+        'timestamp' => time(),
+    ));
+    wp_send_json_success();
+}
+
+function ggt_dismiss_auth_notice() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized', 401);
+    }
+    delete_option('ggt_auth_required');
+    wp_send_json_success();
+}
+
 
 
 function clear_all_products()
 {
     if (!current_user_can('manage_options')) {
         wp_send_json_error('Unauthorized', 401);
+    }
+    if (!get_option('ggt_plugin_enabled', 1)) {
+        wp_send_json_error('Plugin is disabled', 403);
     }
 
     $args = array(
@@ -1535,6 +1770,9 @@ function create_product()
     if (!current_user_can('manage_options')) {
         wp_send_json_error('Unauthorized', 401);
     }
+    if (!get_option('ggt_plugin_enabled', 1)) {
+        wp_send_json_error('Plugin is disabled', 403);
+    }
 
     $product_data = $_POST['product_data'];
 
@@ -1593,6 +1831,9 @@ function update_product()
     if (!current_user_can('manage_options')) {
         wp_send_json_error('Unauthorized', 401);
     }
+    if (!get_option('ggt_plugin_enabled', 1)) {
+        wp_send_json_error('Plugin is disabled', 403);
+    }
 
     $product_id = intval($_POST['product_id']);
     $product_data = $_POST['product_data'];
@@ -1647,6 +1888,9 @@ function sync_user()
     if (!current_user_can('manage_options')) {
         wp_send_json_error('Unauthorized', 401);
     }
+    if (!get_option('ggt_plugin_enabled', 1)) {
+        wp_send_json_error('Plugin is disabled', 403);
+    }
 
     $user_data = $_POST['user_data'];
 
@@ -1683,6 +1927,9 @@ function delete_all_users()
 {
     if (!current_user_can('manage_options')) {
         wp_send_json_error('Unauthorized', 401);
+    }
+    if (!get_option('ggt_plugin_enabled', 1)) {
+        wp_send_json_error('Plugin is disabled', 403);
     }
 
     // Get all users with role 'subscriber' or 'customer'
@@ -1810,6 +2057,10 @@ add_action('register_form', 'add_custom_registration_fields');
 
 function add_custom_registration_fields()
 {
+    // Respect master enable/disable toggle
+    if (!get_option('ggt_plugin_enabled', 1)) {
+        return;
+    }
     if (!get_option('ggt_enable_additional_registration_fields')) {
         return;
     }
@@ -1844,6 +2095,7 @@ add_action('user_register', 'save_custom_registration_fields');
 
 function save_custom_registration_fields($user_id)
 {
+    if (!get_option('ggt_plugin_enabled', 1)) return;
     $catalog = function_exists('ggt_get_registration_fields_catalog') ? ggt_get_registration_fields_catalog() : [];
     $enabled = get_option('ggt_user_field_mapping_enabled', []);
     if (is_object($enabled)) { $enabled = (array)$enabled; }
@@ -1880,6 +2132,18 @@ function save_custom_registration_fields($user_id)
     ggt_sinappsus_connect_to_api('customers', $user_data, 'POST');
 }
 // END USER PROFILES AND REGISTER
+
+// Admin notice when authentication is required
+add_action('admin_notices', 'ggt_admin_auth_notice');
+function ggt_admin_auth_notice() {
+    if (!current_user_can('manage_options')) return;
+    if (!get_option('ggt_auth_required')) return;
+    $screen = get_current_screen();
+    $link = admin_url('admin.php?page=sinappsus-ggt-settings#auth');
+    echo '<div class="notice notice-error is-dismissible ggt-auth-notice"><p><strong>Go Geothermal:</strong> API calls are failing due to missing/expired authentication. Please <a href="' . esc_url($link) . '">re-authenticate on the Authentication tab</a>.</p></div>';
+    // Add a small inline script to dismiss server-side
+    echo '<script>document.addEventListener("click",function(e){if(e.target && e.target.closest(".ggt-auth-notice .notice-dismiss")){jQuery.post(ajaxurl,{action:"ggt_dismiss_auth_notice"});}});</script>';
+}
 
 
 // AUTHENTICATION TO API
