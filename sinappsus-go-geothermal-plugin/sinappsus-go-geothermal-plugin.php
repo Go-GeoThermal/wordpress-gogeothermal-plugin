@@ -52,6 +52,9 @@ require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/ui.php';
 // Load Flexible Import functionality
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/flexible-import.php';
 
+// Load User/Accounts Mapping functionality
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/user-mapping.php';
+
 // Load Custom Product Tab for mapped fields
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/product-tab.php';
 

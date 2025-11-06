@@ -125,10 +125,7 @@ class Sinappsus_GGT_Admin_UI
                     <button type="button" id="configure-import-button" class="button button-primary">Configure Field Mapping</button>
                     <p class="description">Map API fields to WooCommerce product fields before importing.</p>
                 </div>
-                <div class="action-item">
-                    <button type="button" id="sync-products-button" class="button button-secondary">Sync All Products</button>
-                    <p class="description">This will synchronize all products with the Sage system.</p>
-                </div>
+                
              
                 <!-- Progress container for sync process -->
                 <div id="sync-progress-container" style="display:none; margin-top: 15px;">
@@ -144,6 +141,10 @@ class Sinappsus_GGT_Admin_UI
             </div>
             <div id="user-actions" style="display: <?php echo $token_exists ? 'block' : 'none'; ?>">
                 <h2>User Actions</h2>
+                <div class="action-item">
+                    <button type="button" id="configure-user-mapping-button" class="button button-primary">Configure User Field Mapping</button>
+                    <p class="description">Map API account fields to WordPress/WooCommerce and control which fields show on registration.</p>
+                </div>
                 <div class="action-item">
                     <button type="button" id="sync-users-button" class="button button-secondary">Sync All Users</button>
                     <p class="description">This will synchronize all users with the Sage system.</p>
@@ -171,12 +172,16 @@ class Sinappsus_GGT_Admin_UI
             </div>
 
             <div style="display: <?php echo $token_exists ? 'block' : 'none'; ?>">
-                <h2>Registration Fields</h2>
+                <h2>Registration & Import Settings</h2>
                 <form method="post" action="options.php">
                     <?php
+                    // One settings form handles both sections to avoid clearing values from the other
                     settings_fields('ggt_sinappsus_settings_group');
                     do_settings_sections('ggt_sinappsus_settings_group');
                     ?>
+
+                    <!-- Registration Fields -->
+                    <h3>Registration Fields</h3>
                     <table class="form-table">
                         <tr valign="top">
                             <th scope="row">Additional Registration Fields</th>
@@ -188,16 +193,20 @@ class Sinappsus_GGT_Admin_UI
                                 <p class="description">Enable or disable additional fields on the registration form.</p>
                             </td>
                         </tr>
+                        <tr valign="top">
+                            <th scope="row">Two-Column Registration Layout</th>
+                            <td>
+                                <label for="ggt_registration_two_columns">
+                                    <input type="checkbox" id="ggt_registration_two_columns" name="ggt_registration_two_columns" value="1" <?php checked(1, get_option('ggt_registration_two_columns'), true); ?> />
+                                    Split additional registration fields into two columns
+                                </label>
+                                <p class="description">When enabled, the extra registration fields will render in two responsive columns.</p>
+                            </td>
+                        </tr>
                     </table>
-                    <?php submit_button('Save Settings'); ?>
-                </form>
 
-                <h2>Import Settings</h2>
-                <form method="post" action="options.php">
-                    <?php
-                    settings_fields('ggt_sinappsus_settings_group');
-                    do_settings_sections('ggt_sinappsus_settings_group');
-                    ?>
+                    <!-- Import Settings -->
+                    <h3>Import Settings</h3>
                     <table class="form-table">
                         <tr valign="top">
                             <th scope="row">Enable ACF Relate</th>
@@ -268,6 +277,7 @@ class Sinappsus_GGT_Admin_UI
                             </td>
                         </tr>
                     </table>
+
                     <?php submit_button('Save Settings'); ?>
                 </form>
             </div>
@@ -337,6 +347,25 @@ class Sinappsus_GGT_Admin_UI
                 </div>
             </div>
         </div>
+
+                <!-- User Mapping Modal -->
+                <div id="user-mapping-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:999999;">
+                    <div style="position:relative; width:90%; max-width:1000px; margin:50px auto; background:#fff; border-radius:8px; max-height:90vh; overflow-y:auto;">
+                        <div style="padding:20px; border-bottom:1px solid #ddd;">
+                            <h2 style="margin:0;">Configure User/Account Field Mapping</h2>
+                            <button id="close-user-mapping-modal" style="position:absolute; top:20px; right:20px; background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+                        </div>
+                        <div style="padding:20px;">
+                            <p>Map API user/account fields (left) to WordPress/WooCommerce targets (right). Use the checkbox to enable which fields are active and visible on registration.</p>
+                            <div style="margin-bottom:15px;">
+                                <button type="button" id="user-enable-all" class="button">Enable All</button>
+                                <button type="button" id="user-disable-all" class="button">Disable All</button>
+                                <button type="button" id="user-save-mapping" class="button button-primary" style="float:right;">Save Mapping</button>
+                            </div>
+                            <div id="user-field-mapping-container" style="border:1px solid #ddd; padding:15px; background:#f9f9f9; max-height:500px; overflow-y:auto;"></div>
+                        </div>
+                    </div>
+                </div>
 
         <script type="text/javascript">
             document.addEventListener('DOMContentLoaded', function() {
@@ -804,6 +833,11 @@ class Sinappsus_GGT_Admin_UI
                 let availableAPIFields = [];
                 let currentMapping = {};
                 let enabledFields = {};
+                // User mapping state
+                let userAvailableTargets = [];
+                let userAvailableApiFields = [];
+                let userCurrentMapping = {};
+                let userEnabledFields = {};
 
                 document.getElementById('configure-import-button').addEventListener('click', function() {
                     document.getElementById('flexible-import-modal').style.display = 'block';
@@ -815,6 +849,128 @@ class Sinappsus_GGT_Admin_UI
 
                 document.getElementById('close-modal').addEventListener('click', function() {
                     document.getElementById('flexible-import-modal').style.display = 'none';
+                });
+
+                // Open User Mapping modal and load data
+                const openUserMapping = function() {
+                    document.getElementById('user-mapping-modal').style.display = 'block';
+                    Promise.all([
+                        jQuery.post(ajaxurl, { action: 'ggt_users_get_api_fields' }),
+                        jQuery.post(ajaxurl, { action: 'ggt_users_get_available_fields' }),
+                        jQuery.post(ajaxurl, { action: 'ggt_users_get_field_mapping' })
+                    ]).then(([apiRes, targetsRes, mapRes]) => {
+                        if (apiRes.success) {
+                            userAvailableApiFields = apiRes.data.map(item => item.key);
+                        }
+                        if (targetsRes.success) {
+                            userAvailableTargets = targetsRes.data;
+                        }
+                        if (mapRes.success && mapRes.data) {
+                            userCurrentMapping = mapRes.data.mapping || {};
+                            userEnabledFields = mapRes.data.enabled_fields || {};
+                            if (Array.isArray(userCurrentMapping)) userCurrentMapping = {};
+                            if (Array.isArray(userEnabledFields)) userEnabledFields = {};
+                        }
+                        renderUserFieldMapping();
+                    });
+                };
+
+                const configureUserBtn = document.getElementById('configure-user-mapping-button');
+                if (configureUserBtn) {
+                    configureUserBtn.addEventListener('click', openUserMapping);
+                }
+                const closeUserModalBtn = document.getElementById('close-user-mapping-modal');
+                if (closeUserModalBtn) {
+                    closeUserModalBtn.addEventListener('click', function(){
+                        document.getElementById('user-mapping-modal').style.display = 'none';
+                    });
+                }
+
+                function renderUserFieldMapping() {
+                    let html = '<table class="wp-list-table widefat fixed"><thead><tr>' +
+                               '<th style="width:10%;">Enable</th>' +
+                               '<th style="width:40%;">API Field</th>' +
+                               '<th style="width:40%;">Target Field</th>' +
+                               '<th style="width:10%;">Action</th>' +
+                               '</tr></thead><tbody>';
+
+                    userAvailableApiFields.forEach(apiField => {
+                        const mappedTo = userCurrentMapping[apiField] || '';
+                        const isEnabled = userEnabledFields[apiField] !== false; // default true
+                        html += '<tr>' +
+                                '<td style="text-align:center;"><input type="checkbox" class="user-field-enabled" data-api-field="' + apiField + '" ' + (isEnabled ? 'checked' : '') + '></td>' +
+                                '<td><strong>' + apiField + '</strong></td>' +
+                                '<td><select class="user-field-mapping" data-api-field="' + apiField + '" style="width:100%">' +
+                                '<option value="">-- Not Mapped --</option>';
+                        let currentGroup = '';
+                        userAvailableTargets.forEach(field => {
+                            if (field.group !== currentGroup) {
+                                if (currentGroup) html += '</optgroup>';
+                                html += '<optgroup label="' + field.group + '">';
+                                currentGroup = field.group;
+                            }
+                            const selected = (mappedTo === field.value) ? 'selected' : '';
+                            html += '<option value="' + field.value + '" ' + selected + '>' + field.label + '</option>';
+                        });
+                        html += '</optgroup></select></td>' +
+                                '<td><button type="button" class="button user-clear-map" data-api-field="' + apiField + '">Clear</button></td>' +
+                                '</tr>';
+                    });
+
+                    html += '</tbody></table>';
+                    const container = document.getElementById('user-field-mapping-container');
+                    if (container) container.innerHTML = html;
+
+                    document.querySelectorAll('.user-field-enabled').forEach(cb => {
+                        cb.addEventListener('change', function() {
+                            const k = this.getAttribute('data-api-field');
+                            userEnabledFields[k] = this.checked;
+                        });
+                    });
+                    document.querySelectorAll('.user-field-mapping').forEach(sel => {
+                        sel.addEventListener('change', function() {
+                            const k = this.getAttribute('data-api-field');
+                            const v = this.value;
+                            if (v) {
+                                userCurrentMapping[k] = v;
+                                if (!userEnabledFields.hasOwnProperty(k)) userEnabledFields[k] = true;
+                            } else {
+                                delete userCurrentMapping[k];
+                            }
+                        });
+                    });
+                    document.querySelectorAll('.user-clear-map').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const k = this.getAttribute('data-api-field');
+                            delete userCurrentMapping[k];
+                            renderUserFieldMapping();
+                        });
+                    });
+                }
+
+                const userEnableAllBtn = document.getElementById('user-enable-all');
+                if (userEnableAllBtn) userEnableAllBtn.addEventListener('click', function(){
+                    userAvailableApiFields.forEach(k => userEnabledFields[k] = true);
+                    renderUserFieldMapping();
+                });
+                const userDisableAllBtn = document.getElementById('user-disable-all');
+                if (userDisableAllBtn) userDisableAllBtn.addEventListener('click', function(){
+                    userAvailableApiFields.forEach(k => userEnabledFields[k] = false);
+                    renderUserFieldMapping();
+                });
+                const userSaveBtn = document.getElementById('user-save-mapping');
+                if (userSaveBtn) userSaveBtn.addEventListener('click', function(){
+                    jQuery.post(ajaxurl, {
+                        action: 'ggt_users_save_field_mapping',
+                        mapping: JSON.stringify(userCurrentMapping),
+                        enabled_fields: JSON.stringify(userEnabledFields)
+                    }).done(function(res){
+                        if (res.success) {
+                            alert('User mapping saved.');
+                        } else {
+                            alert('Error saving user mapping: ' + (res.data || 'Unknown error'));
+                        }
+                    });
                 });
 
                 document.getElementById('load-preview').addEventListener('click', function() {
@@ -1276,6 +1432,7 @@ function ggt_sinappsus_register_settings()
     register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_email');
     register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_password');
     register_setting('ggt_sinappsus_settings_group', 'ggt_enable_additional_registration_fields');
+    register_setting('ggt_sinappsus_settings_group', 'ggt_registration_two_columns');
     register_setting('ggt_sinappsus_settings_group', 'ggt_sinappsus_environment');
     // Import relating options
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_enable_acf_relate');
@@ -1506,28 +1663,17 @@ function sync_user()
         wp_send_json_error('Failed to create user: ' . $user_data['email']);
     }
 
-    // Update user meta data
-    foreach ($user_data as $key => $value) {
-        update_user_meta($user_id, $key, $value);
+    // Apply mapping to user data (map-only semantics) and persist via helper
+    if (function_exists('ggt_apply_user_field_mapping')) {
+        $mapped = ggt_apply_user_field_mapping($user_data);
+        if (function_exists('ggt_update_user_targets')) {
+            ggt_update_user_targets($user_id, $mapped);
+        } else {
+            foreach ($mapped as $targetKey => $val) {
+                update_user_meta($user_id, $targetKey, $val);
+            }
+        }
     }
-
-    // Update WooCommerce billing and shipping address fields
-    update_user_meta($user_id, 'billing_address_1', sanitize_text_field($user_data['address1']));
-    update_user_meta($user_id, 'billing_address_2', sanitize_text_field($user_data['address2']));
-    update_user_meta($user_id, 'billing_city', sanitize_text_field($user_data['address3']));
-    update_user_meta($user_id, 'billing_state', sanitize_text_field($user_data['address4']));
-    update_user_meta($user_id, 'billing_postcode', sanitize_text_field($user_data['address5']));
-    update_user_meta($user_id, 'billing_country', sanitize_text_field($user_data['countryCode']));
-    update_user_meta($user_id, 'billing_phone', sanitize_text_field($user_data['telephone']));
-    update_user_meta($user_id, 'billing_email', sanitize_text_field($user_data['email']));
-
-    update_user_meta($user_id, 'shipping_address_1', sanitize_text_field($user_data['deliveryAddress1']));
-    update_user_meta($user_id, 'shipping_address_2', sanitize_text_field($user_data['deliveryAddress2']));
-    update_user_meta($user_id, 'shipping_city', sanitize_text_field($user_data['deliveryAddress3']));
-    update_user_meta($user_id, 'shipping_state', sanitize_text_field($user_data['deliveryAddress4']));
-    update_user_meta($user_id, 'shipping_postcode', sanitize_text_field($user_data['deliveryAddress5']));
-    update_user_meta($user_id, 'shipping_country', sanitize_text_field($user_data['countryCode']));
-    update_user_meta($user_id, 'shipping_phone', sanitize_text_field($user_data['telephone']));
 
 
     wp_send_json_success();
@@ -1596,81 +1742,45 @@ add_action('edit_user_profile', 'show_custom_user_profile_fields');
 
 function show_custom_user_profile_fields($user)
 {
-    $custom_fields = [
-        'accountRef' => 'Account Reference',
-        'address1' => 'Address 1',
-        'address2' => 'Address 2',
-        'address3' => 'Address 3',
-        'address4' => 'Address 4',
-        'address5' => 'Address 5',
-        'countryCode' => 'Country Code',
-        'contactName' => 'Contact Name',
-        'telephone' => 'Telephone',
-        'deliveryName' => 'Delivery Name',
-        'deliveryAddress1' => 'Delivery Address 1',
-        'deliveryAddress2' => 'Delivery Address 2',
-        'deliveryAddress3' => 'Delivery Address 3',
-        'deliveryAddress4' => 'Delivery Address 4',
-        'deliveryAddress5' => 'Delivery Address 5',
-        'email2' => 'Email 2',
-        'email3' => 'Email 3',
-        'email4' => 'Email 4',
-        'email5' => 'Email 5',
-        'email6' => 'Email 6',
-        'eoriNumber' => 'EORI Number',
-        'defNomCode' => 'Default Nominal Code',
-        'defNomCodeUseDefault' => 'Use Default Nominal Code',
-        'defTaxCode' => 'Default Tax Code',
-        'defTaxCodeUseDefault' => 'Use Default Tax Code',
-        'terms' => 'Terms',
-        'termsAgreed' => 'Terms Agreed',
-        'turnoverYtd' => 'Turnover YTD',
-        'currency' => 'Currency',
-        'bankAccountName' => 'Bank Account Name',
-        'bankSortCode' => 'Bank Sort Code',
-        'bankAccountNumber' => 'Bank Account Number',
-        'bacsRef' => 'BACS Reference',
-        'iban' => 'IBAN',
-        'bicSwift' => 'BIC/SWIFT',
-        'rollNumber' => 'Roll Number',
-        'additionalRef1' => 'Additional Reference 1',
-        'additionalRef2' => 'Additional Reference 2',
-        'additionalRef3' => 'Additional Reference 3',
-        'paymentType' => 'Payment Type',
-        'sendInvoicesElectronically' => 'Send Invoices Electronically',
-        'sendLettersElectronically' => 'Send Letters Electronically',
-        'analysis1' => 'Analysis 1',
-        'analysis2' => 'Analysis 2',
-        'analysis3' => 'Analysis 3',
-        'analysis4' => 'Analysis 4',
-        'analysis5' => 'Analysis 5',
-        'analysis6' => 'Analysis 6',
-        'deptNumber' => 'Department Number',
-        'paymentDueDays' => 'Payment Due Days',
-        'paymentDueFrom' => 'Payment Due From',
-        'accountStatus' => 'Account Status',
-        'inactiveAccount' => 'Inactive Account',
-        'onHold' => 'On Hold',
-        'creditLimit' => 'Credit Limit',
-        'balance' => 'Balance',
-        'vatNumber' => 'VAT Number',
-        'memo' => 'Memo',
-        'discountRate' => 'Discount Rate',
-        'discountType' => 'Discount Type',
-        'www' => 'Website',
-        'priceListRef' => 'Price List Reference',
-        'tradeContact' => 'Trade Contact',
-        'telephone2' => 'Telephone 2',
-        'fax' => 'Fax',
-        'lastDateSynched' => 'Last Date Synched',
-    ];
+    // Build profile UI from mapped fields only (show everything imported)
+    $mapping = get_option('ggt_user_field_mapping', array());
+    if (is_object($mapping)) { $mapping = (array)$mapping; }
+    $catalog = function_exists('ggt_get_registration_fields_catalog') ? ggt_get_registration_fields_catalog() : array();
 
-    echo '<h3>Custom User Profile Fields</h3>';
+    // Compute targets to show (dedup by target), ignore enabled flags here
+    $targets = array();
+    foreach ($mapping as $apiKey => $targetKey) {
+        if (empty($targetKey)) continue;
+        if (!isset($targets[$targetKey])) {
+            $label = isset($catalog[$apiKey]) ? $catalog[$apiKey] : $apiKey;
+            $targets[$targetKey] = $label;
+        }
+    }
+
+    if (empty($targets)) return;
+
+    echo '<h3>Account Fields</h3>';
     echo '<table class="form-table">';
-    foreach ($custom_fields as $key => $label) {
+    foreach ($targets as $targetKey => $label) {
+        // Determine current value for core vs meta keys
+        $current = '';
+        switch ($targetKey) {
+            case 'user_email':
+                $current = $user->user_email; break;
+            case 'first_name':
+                $current = get_user_meta($user->ID, 'first_name', true); break;
+            case 'last_name':
+                $current = get_user_meta($user->ID, 'last_name', true); break;
+            case 'display_name':
+                $current = $user->display_name; break;
+            case 'nickname':
+                $current = get_user_meta($user->ID, 'nickname', true); break;
+            default:
+                $current = get_user_meta($user->ID, $targetKey, true); break;
+        }
         echo '<tr>';
-        echo '<th><label for="' . $key . '">' . $label . '</label></th>';
-        echo '<td><input type="text" name="' . $key . '" id="' . $key . '" value="' . esc_attr(get_user_meta($user->ID, $key, true)) . '" class="regular-text" /></td>';
+        echo '<th><label for="' . esc_attr($targetKey) . '">' . esc_html($label) . '</label></th>';
+        echo '<td><input type="text" name="ggt_profile[' . esc_attr($targetKey) . ']" id="' . esc_attr($targetKey) . '" value="' . esc_attr($current) . '" class="regular-text" /></td>';
         echo '</tr>';
     }
     echo '</table>';
@@ -1681,79 +1791,15 @@ add_action('edit_user_profile_update', 'save_custom_user_profile_fields');
 
 function save_custom_user_profile_fields($user_id)
 {
-    $custom_fields = [
-        'accountRef',
-        'address1',
-        'address2',
-        'address3',
-        'address4',
-        'address5',
-        'countryCode',
-        'contactName',
-        'telephone',
-        'deliveryName',
-        'deliveryAddress1',
-        'deliveryAddress2',
-        'deliveryAddress3',
-        'deliveryAddress4',
-        'deliveryAddress5',
-        'email2',
-        'email3',
-        'email4',
-        'email5',
-        'email6',
-        'eoriNumber',
-        'defNomCode',
-        'defNomCodeUseDefault',
-        'defTaxCode',
-        'defTaxCodeUseDefault',
-        'terms',
-        'termsAgreed',
-        'turnoverYtd',
-        'currency',
-        'bankAccountName',
-        'bankSortCode',
-        'bankAccountNumber',
-        'bacsRef',
-        'iban',
-        'bicSwift',
-        'rollNumber',
-        'additionalRef1',
-        'additionalRef2',
-        'additionalRef3',
-        'paymentType',
-        'sendInvoicesElectronically',
-        'sendLettersElectronically',
-        'analysis1',
-        'analysis2',
-        'analysis3',
-        'analysis4',
-        'analysis5',
-        'analysis6',
-        'deptNumber',
-        'paymentDueDays',
-        'paymentDueFrom',
-        'accountStatus',
-        'inactiveAccount',
-        'onHold',
-        'creditLimit',
-        'balance',
-        'vatNumber',
-        'memo',
-        'discountRate',
-        'discountType',
-        'www',
-        'priceListRef',
-        'tradeContact',
-        'telephone2',
-        'fax',
-        'lastDateSynched',
-    ];
-
-    foreach ($custom_fields as $key) {
-        if (isset($_POST[$key])) {
-            update_user_meta($user_id, $key, sanitize_text_field($_POST[$key]));
-        }
+    if (!isset($_POST['ggt_profile']) || !is_array($_POST['ggt_profile'])) return;
+    $updates = array();
+    foreach ($_POST['ggt_profile'] as $targetKey => $val) {
+        $updates[$targetKey] = sanitize_text_field($val);
+    }
+    if (function_exists('ggt_update_user_targets')) {
+        ggt_update_user_targets($user_id, $updates);
+    } else {
+        foreach ($updates as $k => $v) update_user_meta($user_id, $k, $v);
     }
 }
 
@@ -1767,26 +1813,30 @@ function add_custom_registration_fields()
     if (!get_option('ggt_enable_additional_registration_fields')) {
         return;
     }
+    // Pull from mapping catalog and enabled mask
+    $catalog = function_exists('ggt_get_registration_fields_catalog') ? ggt_get_registration_fields_catalog() : [];
+    $enabled = get_option('ggt_user_field_mapping_enabled', []);
+    if (is_object($enabled)) { $enabled = (array)$enabled; }
 
-    $custom_fields = [
-        'name' => 'Name',
-        'address1' => 'Address 1',
-        'address2' => 'Address 2',
-        'address3' => 'Address 3',
-        'address4' => 'Address 4',
-        'address5' => 'Address 5',
-        'countryCode' => 'Country Code',
-        'contactName' => 'Contact Name',
-        'telephone' => 'Telephone',
-        'email2' => 'Email 2',
-        'eoriNumber' => 'EORI Number',
-        'www' => 'Website',
-        'telephone2' => 'Telephone 2',
-    ];
+    $two_cols = (bool) get_option('ggt_registration_two_columns');
+    if ($two_cols) {
+        // Force a 2-column grid and collapse to 1 column on small screens with a tiny inline style block
+        echo '<style type="text/css">.ggt-registration-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px} @media (max-width:640px){.ggt-registration-grid{grid-template-columns:1fr}}</style>';
+        echo '<div class="ggt-registration-grid">';
+    }
 
+    foreach ($catalog as $key => $label) {
+        if (is_array($enabled) && array_key_exists($key, $enabled) && !$enabled[$key]) {
+            continue;
+        }
+        echo '<p class="ggt-reg-field" style="margin:0 0 12px 0;">'
+            . '<label for="' . esc_attr($key) . '">' . esc_html($label) . '</label><br>'
+            . '<input type="text" name="' . esc_attr($key) . '" id="' . esc_attr($key) . '" class="input" value="' . esc_attr(wp_unslash($_POST[$key] ?? '')) . '" size="25" />'
+            . '</p>';
+    }
 
-    foreach ($custom_fields as $key => $label) {
-        echo '<p><label for="' . $key . '">' . $label . '</label><br><input type="text" name="' . $key . '" id="' . $key . '" class="input" value="' . esc_attr(wp_unslash($_POST[$key] ?? '')) . '" size="25" /></p>';
+    if ($two_cols) {
+        echo '</div>';
     }
 }
 
@@ -1794,27 +1844,18 @@ add_action('user_register', 'save_custom_registration_fields');
 
 function save_custom_registration_fields($user_id)
 {
-    $custom_fields = [
-        'name',
-        'address1',
-        'address2',
-        'address3',
-        'address4',
-        'address5',
-        'countryCode',
-        'contactName',
-        'telephone',
-        'email2',
-        'eoriNumber',
-        'www',
-        'telephone2',
-    ];
+    $catalog = function_exists('ggt_get_registration_fields_catalog') ? ggt_get_registration_fields_catalog() : [];
+    $enabled = get_option('ggt_user_field_mapping_enabled', []);
+    if (is_object($enabled)) { $enabled = (array)$enabled; }
 
     $user_data = [];
-    foreach ($custom_fields as $key) {
+    foreach ($catalog as $key => $label) {
+        if (is_array($enabled) && array_key_exists($key, $enabled) && !$enabled[$key]) {
+            continue;
+        }
         if (isset($_POST[$key])) {
-            update_user_meta($user_id, $key, sanitize_text_field($_POST[$key]));
-            $user_data[$key] = sanitize_text_field($_POST[$key]);
+            $val = sanitize_text_field($_POST[$key]);
+            $user_data[$key] = $val;
         }
     }
     
@@ -1823,23 +1864,17 @@ function save_custom_registration_fields($user_id)
         $user_data['email'] = sanitize_email($_POST['email']);
     }
 
-    // Update WooCommerce billing and shipping address fields
-    update_user_meta($user_id, 'billing_address_1', sanitize_text_field($_POST['address1']));
-    update_user_meta($user_id, 'billing_address_2', sanitize_text_field($_POST['address2']));
-    update_user_meta($user_id, 'billing_city', sanitize_text_field($_POST['address3']));
-    update_user_meta($user_id, 'billing_state', sanitize_text_field($_POST['address4']));
-    update_user_meta($user_id, 'billing_postcode', sanitize_text_field($_POST['address5']));
-    update_user_meta($user_id, 'billing_country', sanitize_text_field($_POST['countryCode']));
-    update_user_meta($user_id, 'billing_phone', sanitize_text_field($_POST['telephone']));
-    update_user_meta($user_id, 'billing_email', sanitize_text_field($_POST['email']));
-
-    update_user_meta($user_id, 'shipping_address_1', sanitize_text_field($_POST['address1']));
-    update_user_meta($user_id, 'shipping_address_2', sanitize_text_field($_POST['address2']));
-    update_user_meta($user_id, 'shipping_city', sanitize_text_field($_POST['address3']));
-    update_user_meta($user_id, 'shipping_state', sanitize_text_field($_POST['address4']));
-    update_user_meta($user_id, 'shipping_postcode', sanitize_text_field($_POST['address5']));
-    update_user_meta($user_id, 'shipping_country', sanitize_text_field($_POST['countryCode']));
-    update_user_meta($user_id, 'shipping_phone', sanitize_text_field($_POST['telephone']));
+    // Apply user mapping to additionally set target fields
+    if (function_exists('ggt_apply_user_field_mapping')) {
+        $mapped = ggt_apply_user_field_mapping($user_data);
+        if (function_exists('ggt_update_user_targets')) {
+            ggt_update_user_targets($user_id, $mapped);
+        } else {
+            foreach ($mapped as $targetKey => $val) {
+                update_user_meta($user_id, $targetKey, $val);
+            }
+        }
+    }
 
     // Send user data to the API using centralized function
     ggt_sinappsus_connect_to_api('customers', $user_data, 'POST');
