@@ -9,6 +9,25 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Raise execution time and memory limits for long-running import operations.
+if (!function_exists('ggt_raise_import_limits')) {
+    function ggt_raise_import_limits($context = 'import') {
+        // Allow overrides via filters
+        $time_limit = apply_filters('ggt_import_time_limit', 0, $context); // 0 = unlimited
+        $memory_limit = apply_filters('ggt_import_memory_limit', '1024M', $context);
+    // Default HTTP timeout increased to 300s (5 minutes) to accommodate long imports
+    $http_timeout = apply_filters('ggt_import_http_timeout', 300, $context); // seconds
+
+        // Best-effort increases (silence if disallowed)
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(intval($time_limit));
+        }
+        @ini_set('memory_limit', $memory_limit);
+
+        return intval($http_timeout);
+    }
+}
+
 // AJAX handlers
 add_action('wp_ajax_ggt_get_available_fields', 'ggt_get_available_fields');
 add_action('wp_ajax_ggt_save_field_mapping', 'ggt_save_field_mapping');
@@ -221,6 +240,9 @@ function ggt_preview_import() {
         wp_send_json_error('Unauthorized', 401);
     }
 
+    // Increase limits to avoid preview timeouts on slow servers
+    $http_timeout = ggt_raise_import_limits('preview');
+
     $token = ggt_get_decrypted_token();
     if (!$token) {
         wp_send_json_error('No authentication token found');
@@ -247,7 +269,7 @@ function ggt_preview_import() {
             'Authorization' => 'Bearer ' . $token,
             'Content-Type' => 'application/json'
         ),
-        'timeout' => 30
+        'timeout' => max(30, $http_timeout)
     ));
 
     if (is_wp_error($response)) {
@@ -288,6 +310,9 @@ function ggt_analyze_import() {
         wp_send_json_error('Unauthorized', 401);
     }
 
+    // Increase limits for analysis which fetches all products
+    $http_timeout = ggt_raise_import_limits('analyze');
+
     $token = ggt_get_decrypted_token();
     if (!$token) {
         wp_send_json_error('No authentication token found');
@@ -323,7 +348,7 @@ function ggt_analyze_import() {
             'Authorization' => 'Bearer ' . $token,
             'Content-Type' => 'application/json'
         ),
-        'timeout' => 60
+        'timeout' => max(60, $http_timeout)
     ));
 
     if (is_wp_error($response)) {
@@ -424,6 +449,62 @@ function ggt_execute_flexible_import() {
         wp_send_json_error('Plugin is disabled', 403);
     }
 
+    // Lift resource limits for the full import
+    $http_timeout = ggt_raise_import_limits('execute');
+
+    // Track progress and add a shutdown handler to return a helpful error if PHP fatals
+    $import_started_at = microtime(true);
+    $progress = (object) [
+        'processed' => 0,
+        'updated' => 0,
+        'created' => 0,
+        'skipped' => 0
+    ];
+    // Will be updated as we go; used for last message if we crash
+    $last_step = 'initializing';
+
+    // Shutdown handler for fatal errors (memory/time). Emits a JSON error if possible.
+    register_shutdown_function(function () use ($import_started_at, &$progress, &$last_step) {
+        $err = error_get_last();
+        if (!$err) return;
+        $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR];
+        if (!in_array($err['type'], $fatalTypes, true)) return;
+
+        $duration = round((microtime(true) - $import_started_at) * 1000);
+        $peak_mem_mb = round(memory_get_peak_usage(true) / 1048576, 2);
+
+        // Heuristics to classify the cause
+        $message = isset($err['message']) ? (string) $err['message'] : '';
+        $cause = 'Server resource limit or fatal error';
+        if (stripos($message, 'Allowed memory size') !== false) {
+            $cause = 'Memory limit exceeded';
+        } elseif (stripos($message, 'Maximum execution time') !== false) {
+            $cause = 'Execution time limit exceeded';
+        }
+
+        // Try to send JSON if headers aren't sent yet
+        if (!headers_sent()) {
+            status_header(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo wp_json_encode([
+                'success' => false,
+                'message' => 'Import failed: ' . $cause . '.',
+                'hint' => 'We raised time and memory limits for this request. If this persists, try smaller batches or raise the server limits.',
+                'meta' => [
+                    'processed' => $progress->processed,
+                    'updated' => $progress->updated,
+                    'created' => $progress->created,
+                    'skipped' => $progress->skipped,
+                    'last_step' => $last_step,
+                    'duration_ms' => $duration,
+                    'peak_memory_mb' => $peak_mem_mb,
+                ]
+            ]);
+            // Ensure we stop here
+            die();
+        }
+    });
+
     $token = ggt_get_decrypted_token();
     if (!$token) {
         wp_send_json_error('No authentication token found');
@@ -440,12 +521,13 @@ function ggt_execute_flexible_import() {
     $api_url = $environments[$selected_env]['api_url'];
 
     // Fetch all products
+    $last_step = 'fetching products from API';
     $response = wp_remote_get($api_url . '/products', array(
         'headers' => array(
             'Authorization' => 'Bearer ' . $token,
             'Content-Type' => 'application/json'
         ),
-        'timeout' => 60
+        'timeout' => max(60, $http_timeout)
     ));
 
     if (is_wp_error($response)) {
@@ -489,6 +571,7 @@ function ggt_execute_flexible_import() {
 
     foreach ($products as $product_data) {
         try {
+            $last_step = 'processing product';
             // Apply field mapping
             $mapped_data = ggt_apply_field_mapping($product_data, $mapping);
             
@@ -497,6 +580,8 @@ function ggt_execute_flexible_import() {
             
             if (!$stock_code) {
                 $skipped++;
+                $progress->skipped = $skipped;
+                $progress->processed++;
                 continue;
             }
 
@@ -507,6 +592,7 @@ function ggt_execute_flexible_import() {
                 // Update existing (pass original product_data for ACF relationships)
                 ggt_update_product_with_mapping_and_acf($product_id, $product_data, $mapped_data);
                 $updated++;
+                $progress->updated = $updated;
             } else {
                 // Create new (if not inactive)
                 if (empty($mapped_data['inactiveFlag']) || ($mapped_data['inactiveFlag'] !== true && $mapped_data['inactiveFlag'] !== "1")) {
@@ -515,13 +601,17 @@ function ggt_execute_flexible_import() {
                     if ($new_id) {
                         $created++;
                         $existing_products[$stock_code] = $new_id;
+                        $progress->created = $created;
                     }
                 } else {
                     $skipped++;
+                    $progress->skipped = $skipped;
                 }
             }
+            $progress->processed++;
         } catch (Exception $e) {
             $errors[] = 'Error processing product: ' . $e->getMessage();
+            $progress->processed++;
         }
     }
 
@@ -533,11 +623,19 @@ function ggt_execute_flexible_import() {
         'timestamp' => time(),
     ));
 
+    $duration_ms = round((microtime(true) - $import_started_at) * 1000);
+    $peak_memory_mb = round(memory_get_peak_usage(true) / 1048576, 2);
+
     wp_send_json_success(array(
         'updated' => $updated,
         'created' => $created,
         'skipped' => $skipped,
-        'errors' => $errors
+        'errors' => $errors,
+        'meta' => array(
+            'processed' => $progress->processed,
+            'duration_ms' => $duration_ms,
+            'peak_memory_mb' => $peak_memory_mb
+        )
     ));
 }
 

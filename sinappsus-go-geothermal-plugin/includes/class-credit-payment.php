@@ -82,6 +82,10 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
     public function process_payment($order_id) {
         $order = wc_get_order($order_id);
         $user_id = $order->get_user_id();
+        // Store payment provider meta for consistency
+        $order->update_meta_data('ggt_payment_method', $order->get_payment_method());
+        $order->update_meta_data('ggt_payment_method_title', $order->get_payment_method_title());
+        $order->save();
 
         // Comprehensive check for delivery date from multiple sources
         $delivery_date = null;
@@ -162,6 +166,10 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
                 // Mark order as completed
                 $order->payment_complete();
                 $order->update_status('completed', __('Paid using store credit.', 'woocommerce'));
+                // Mark sent to avoid duplicate sends by global hooks
+                $order->update_meta_data('ggt_sales_order_sent', 1);
+                $order->update_meta_data('ggt_sales_order_sent_at', current_time('mysql'));
+                $order->save();
 
                 return array(
                     'result'   => 'success',
@@ -288,6 +296,8 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             'user_meta'      => $user_meta,
             'items'          => array(),
             'world_pay'     =>  $order->get_payment_method(),
+            'payment_provider' => $order->get_payment_method(),
+            'payment_provider_title' => $order->get_payment_method_title(),
             'delivery_date'  => $formatted_delivery_date,
             'delivery_address' => $delivery_address // Add delivery address data
         );
@@ -352,6 +362,9 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
 
     private function get_token()
     {
+        if (function_exists('ggt_get_decrypted_token')) {
+            return ggt_get_decrypted_token();
+        }
         $encrypted_token = get_option('sinappsus_gogeo_codex');
         if ($encrypted_token) {
             return openssl_decrypt($encrypted_token, 'aes-256-cbc', AUTH_KEY, 0, AUTH_SALT);

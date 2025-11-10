@@ -369,16 +369,18 @@ function ggt_add_delivery_date_to_emails($fields, $sent_to_admin, $order) {
 add_action('woocommerce_checkout_order_processed', 'ggt_send_order_to_api', 10, 1);
 function ggt_send_order_to_api($order_id) {
     $order = wc_get_order($order_id);
-    $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
-    
-    $response = ggt_send_order_to_api_endpoint($order, $delivery_date);
+    if (!$order) { return; }
+    // Early store payment method meta for reliability
+    $order->update_meta_data('ggt_payment_method', $order->get_payment_method());
+    $order->update_meta_data('ggt_payment_method_title', $order->get_payment_method_title());
+    $order->save();
 
-    if (is_wp_error($response)) {
-        ggt_log_api_interaction('Error sending order to API', 'error', [
-            'order_id' => $order_id,
-            'error' => $response->get_error_message()
-        ]);
-    }
+    // Only attempt immediate send for on-site gateways (credit or others). External gateways may complete later.
+    $payment_method = $order->get_payment_method();
+    $is_external_gateway = apply_filters('ggt_is_external_gateway', in_array($payment_method, ['worldpay', 'paypal', 'stripe']) );
+
+    // Always queue attempt; if external, the later hooks will retry and mark sent.
+    ggt_attempt_sales_order_send($order, 'checkout_order_processed');
 }
 
 // Central function to send order to API endpoint with proper logging
@@ -386,10 +388,18 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
     $api_key = ggt_get_decrypted_token();
     $api_base_url = ggt_get_api_base_url();
     $endpoint = $api_base_url . '/sales-orders/wp-new-order';
-    
-    // Exclude credit payment method - skip sending
-    if ($order->get_payment_method() === 'geo_credit') {
-        return;
+    $payment_method = $order->get_payment_method();
+    $payment_method_title = $order->get_payment_method_title();
+
+    // Idempotency: do not send twice
+    if ($order->get_meta('ggt_sales_order_sent')) {
+        return new WP_Error('already_sent', 'Sales order already sent');
+    }
+
+    // If no token yet, queue for retry and abort
+    if (empty($api_key)) {
+        ggt_queue_pending_sales_order($order->get_id(), 'missing_token');
+        return new WP_Error('missing_token', 'API token missing; queued for retry');
     }
     
     $user_id = $order->get_user_id();
@@ -433,17 +443,37 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
     
     $order_data = [
         'woocommerce_order_id' => $order->get_id(),
-        'user_id'          => $user_id,
-        'total'            => $order->get_total(),
-        'currency'         => get_woocommerce_currency(),
-        'billing'          => $order->get_address('billing'),
-        'shipping'         => $order->get_address('shipping'),
-        'user_meta'        => $user_meta,
-        'items'            => [],
-        'world_pay'        => $order->get_payment_method(),
-        'delivery_date'    => $formatted_delivery_date,
-        'delivery_address' => $delivery_address
+        'user_id'              => $user_id,
+        'total'                => $order->get_total(),
+        'currency'             => get_woocommerce_currency(),
+        'billing'              => $order->get_address('billing'),
+        'shipping'             => $order->get_address('shipping'),
+        'user_meta'            => $user_meta,
+        'items'                => [],
+        // Backwards compatibility field name remained as world_pay (legacy consumers)
+        'world_pay'            => $payment_method,
+        // New explicit payment provider fields
+        'payment_provider'     => $payment_method,
+        'payment_provider_title' => $payment_method_title,
+        'delivery_date'        => $formatted_delivery_date,
+        'delivery_address'     => $delivery_address
     ];
+
+    // =============================
+    // TEMP: Verbose payload logging for QA (remove after verification)
+    // This logs the full payload being sent to the API to help validate mapping and content.
+    // =============================
+    if (function_exists('wc_get_logger')) {
+        wc_get_logger()->info('TEMP PAYLOAD LOG: sales order payload', [
+            'source' => 'ggt-payload-debug',
+            'order_id' => $order->get_id(),
+            'endpoint' => $endpoint,
+            'payment_provider' => $payment_method,
+            'payload' => $order_data,
+        ]);
+    } else {
+        error_log('[GGT TEMP PAYLOAD] ' . json_encode($order_data));
+    }
     
     foreach ($order->get_items() as $item_id => $item) {
         $product = $item->get_product();
@@ -505,6 +535,22 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         }
     }
     
+    // Mark sent if successful 200 response
+    if (!is_wp_error($response)) {
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code >= 200 && $code < 300) {
+            $order->update_meta_data('ggt_sales_order_sent', 1);
+            $order->update_meta_data('ggt_sales_order_sent_at', current_time('mysql'));
+            $order->save();
+            // Remove from queue if exists
+            ggt_dequeue_pending_sales_order($order->get_id());
+        } else {
+            ggt_queue_pending_sales_order($order->get_id(), 'http_' . $code);
+        }
+    } else {
+        ggt_queue_pending_sales_order($order->get_id(), 'wp_error');
+    }
+
     return $response;
 }
 
@@ -570,6 +616,8 @@ add_action('woocommerce_payment_complete', 'ggt_update_transaction_status', 10, 
 function ggt_update_transaction_status($order_id) {
     $order = wc_get_order($order_id);
     ggt_update_order_status_in_api($order, 'paid');
+    // Attempt send if not yet sent (external gateways often finalize here)
+    ggt_attempt_sales_order_send($order, 'payment_complete');
 }
 
 // Update transaction status on payment failure
@@ -578,6 +626,84 @@ function ggt_update_transaction_status_failed($order_id) {
     $order = wc_get_order($order_id);
     ggt_update_order_status_in_api($order, 'failed');
 }
+
+// Attempt send when order status transitions to processing or completed and not yet sent
+add_action('woocommerce_order_status_changed', function($order_id, $old_status, $new_status, $order){
+    if (in_array($new_status, ['processing','completed','on-hold'])) {
+        ggt_attempt_sales_order_send($order, 'status_changed_' . $new_status);
+    }
+}, 10, 4);
+
+/**
+ * Wrapper to attempt sending sales order payload if not sent.
+ */
+function ggt_attempt_sales_order_send($order, $trigger){
+    if (!$order || $order->get_meta('ggt_sales_order_sent')) { return; }
+    // Let the Credit gateway handle its own send to avoid duplicates
+    if ($order->get_payment_method() === 'geo_credit') { return; }
+    // Avoid duplicate rapid attempts within 5 seconds
+    $last_attempt = $order->get_meta('ggt_sales_order_last_attempt');
+    if ($last_attempt && (time() - intval($last_attempt)) < 5) { return; }
+    $order->update_meta_data('ggt_sales_order_last_attempt', time());
+    $order->save();
+
+    $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
+    $response = ggt_send_order_to_api_endpoint($order, $delivery_date);
+
+    if (is_wp_error($response)) {
+        ggt_log_api_interaction('Sales order send failed, queued', 'error', [
+            'order_id' => $order->get_id(),
+            'trigger' => $trigger,
+            'error_code' => $response->get_error_code(),
+            'error_message' => $response->get_error_message()
+        ]);
+    } else {
+        $code = wp_remote_retrieve_response_code($response);
+        ggt_log_api_interaction('Sales order send attempt', 'info', [
+            'order_id' => $order->get_id(),
+            'trigger' => $trigger,
+            'status' => $code
+        ]);
+    }
+}
+
+// Queue management helpers
+function ggt_queue_pending_sales_order($order_id, $reason){
+    $pending = get_option('ggt_pending_sales_orders', []);
+    if (!is_array($pending)) { $pending = []; }
+    $pending[$order_id] = [
+        'reason' => $reason,
+        'last_attempt' => current_time('mysql'),
+        'attempts' => isset($pending[$order_id]['attempts']) ? $pending[$order_id]['attempts'] + 1 : 1,
+    ];
+    update_option('ggt_pending_sales_orders', $pending, false);
+}
+
+function ggt_dequeue_pending_sales_order($order_id){
+    $pending = get_option('ggt_pending_sales_orders', []);
+    if (isset($pending[$order_id])) {
+        unset($pending[$order_id]);
+        update_option('ggt_pending_sales_orders', $pending, false);
+    }
+}
+
+// Retry pending sales orders on init (lightweight)
+add_action('init', function(){
+    $pending = get_option('ggt_pending_sales_orders', []);
+    if (empty($pending) || !is_array($pending)) { return; }
+    foreach ($pending as $order_id => $meta){
+        $order = wc_get_order($order_id);
+        if (!$order) { ggt_dequeue_pending_sales_order($order_id); continue; }
+        if ($order->get_meta('ggt_sales_order_sent')) { ggt_dequeue_pending_sales_order($order_id); continue; }
+        // Exponential backoff: skip if attempts >5 and last attempt <1 hour ago
+        $attempts = isset($meta['attempts']) ? intval($meta['attempts']) : 0;
+        $last_attempt_time = strtotime($meta['last_attempt']);
+        $now = time();
+        $min_delay = min( (pow(2, $attempts) * 60), 6*3600 ); // cap at 6h
+        if (($now - $last_attempt_time) < $min_delay) { continue; }
+        ggt_attempt_sales_order_send($order, 'retry_attempt');
+    }
+});
 
 // Load payment gateway
 function ggt_load_credit_gateway() {
