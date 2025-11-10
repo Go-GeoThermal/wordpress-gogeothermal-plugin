@@ -700,7 +700,25 @@ function ggt_create_product_with_mapping($mapped_data) {
     }
     
     if (isset($mapped_data['sku'])) {
-        $product->set_sku($mapped_data['sku']);
+        $raw_sku = is_scalar($mapped_data['sku']) ? (string)$mapped_data['sku'] : '';
+        $sku = trim($raw_sku);
+        if ($sku !== '') {
+            // Only set SKU if it's unique (avoid fatal on duplicates)
+            $is_unique = function_exists('wc_product_has_unique_sku') ? wc_product_has_unique_sku(0, $sku) : true;
+            if ($is_unique) {
+                try {
+                    $product->set_sku($sku);
+                } catch (Exception $e) {
+                    // Skip setting SKU on invalid/duplicate; proceed without halting the import
+                    ggt_log("Product (new): SKU '{$sku}' invalid/duplicate; skipping. Error: " . $e->getMessage(), 'IMPORT');
+                }
+            } else {
+                ggt_log("Product (new): SKU '{$sku}' is not unique; skipping SKU set.", 'IMPORT');
+            }
+        } else {
+            // Empty SKU provided; skip setting
+            ggt_log('Product (new): Empty SKU mapped; not setting SKU.', 'IMPORT');
+        }
     }
     
     if (isset($mapped_data['regular_price'])) {
@@ -763,10 +781,16 @@ function ggt_create_product_with_mapping($mapped_data) {
             }
         }
         
-        // Handle featured image (image_url should be mapped from API's image_path field which contains relative path)
+        // Handle featured image (respect replace setting only if an image already exists)
         if (isset($mapped_data['image_url']) && !empty($mapped_data['image_url'])) {
-            ggt_log("Product {$product_id}: Found image_url in mapped data: {$mapped_data['image_url']}", 'IMPORT');
-            set_product_featured_image_from_url($product_id, $mapped_data['image_url']);
+            $replace = (int) get_option('ggt_replace_existing_image', 0);
+            $has_existing = has_post_thumbnail($product_id);
+            if ($has_existing && !$replace) {
+                ggt_log("Product {$product_id}: Skipping featured image replacement (option disabled)", 'IMPORT');
+            } else {
+                ggt_log("Product {$product_id}: Found image_url in mapped data: {$mapped_data['image_url']}", 'IMPORT');
+                set_product_featured_image_from_url($product_id, $mapped_data['image_url']);
+            }
         } else {
             ggt_log("Product {$product_id}: No image_url in mapped data", 'IMPORT');
         }
@@ -890,10 +914,16 @@ function ggt_update_product_with_mapping($product_id, $mapped_data) {
             }
         }
     }
-    // Handle featured image (image_url should be mapped from API's image_path field which contains relative path)
+    // Handle featured image (respect replace setting)
     if (isset($mapped_data['image_url']) && !empty($mapped_data['image_url'])) {
-        ggt_log("Product {$product_id}: Found image_url in mapped data: {$mapped_data['image_url']}", 'IMPORT');
-        set_product_featured_image_from_url($product_id, $mapped_data['image_url']);
+        $replace = (int) get_option('ggt_replace_existing_image', 0);
+        $has_existing = has_post_thumbnail($product_id);
+        if ($has_existing && !$replace) {
+            ggt_log("Product {$product_id}: Skipping featured image replacement (option disabled)", 'IMPORT');
+        } else {
+            ggt_log("Product {$product_id}: Found image_url in mapped data: {$mapped_data['image_url']}", 'IMPORT');
+            set_product_featured_image_from_url($product_id, $mapped_data['image_url']);
+        }
     } else {
         ggt_log("Product {$product_id}: No image_url in mapped data", 'IMPORT');
     }

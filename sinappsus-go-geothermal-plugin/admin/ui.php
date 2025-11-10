@@ -413,6 +413,16 @@ class Sinappsus_GGT_Admin_UI
                                 <p class="description">Select the ACF relationship field for "Related Products".</p>
                             </td>
                         </tr>
+                        <tr valign="top">
+                            <th scope="row">Replace Existing Featured Image</th>
+                            <td>
+                                <label for="ggt_replace_existing_image">
+                                    <input type="checkbox" id="ggt_replace_existing_image" name="ggt_replace_existing_image" value="1" <?php checked(1, get_option('ggt_replace_existing_image'), true); ?> />
+                                    Always replace existing featured image during import/sync
+                                </label>
+                                <p class="description">When unchecked, products that already have a featured image keep it even if the mapped image URL changes. New products always get an image if provided.</p>
+                            </td>
+                        </tr>
                     </table>
 
                     <?php submit_button('Save Settings'); ?>
@@ -1617,6 +1627,7 @@ function ggt_sinappsus_register_settings()
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_enable_acf_relate');
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_acf_required_field');
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_acf_related_field');
+    register_setting('ggt_sinappsus_settings_group', 'ggt_replace_existing_image');
 
     // Dashboard tab
     register_setting('ggt_sinappsus_dashboard_group', 'ggt_plugin_enabled');
@@ -1872,9 +1883,15 @@ function update_product()
     // Optionally relate products via ACF after product is saved
     relate_products_via_acf($product->get_id(), $product_data);
         
-        // Set featured image after product is saved
+        // Set featured image after product is saved (respect replace setting)
         if (!empty($product_data['image_path'])) {
-            set_product_featured_image_from_url($product->get_id(), $product_data['image_path']);
+            $replace = (int) get_option('ggt_replace_existing_image', 0);
+            $has_existing = has_post_thumbnail($product_id);
+            if ($has_existing && !$replace) {
+                ggt_log("Product {$product_id}: Skipped featured image replacement (option disabled)", 'IMPORT');
+            } else {
+                set_product_featured_image_from_url($product->get_id(), $product_data['image_path']);
+            }
         }
         
         wp_send_json_success();
