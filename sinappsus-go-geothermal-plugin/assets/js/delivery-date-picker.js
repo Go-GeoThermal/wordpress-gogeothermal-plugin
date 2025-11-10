@@ -104,7 +104,7 @@
         
         $('#ggt_delivery_date').datepicker({
             dateFormat: 'dd/mm/yy', // UK date format
-            minDate: '+2d',
+            minDate: '+1d',
             maxDate: '+6m',
             beforeShowDay: function(date) {
                 // Check if it's a weekend

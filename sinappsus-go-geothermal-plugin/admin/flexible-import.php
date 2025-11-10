@@ -119,6 +119,28 @@ function ggt_get_available_fields() {
         array('value' => 'countryCodeOfOrigin', 'label' => 'Country Code Of Origin', 'group' => 'Meta'),
     );
 
+    // Dynamically add all registered product taxonomies as mappable targets
+    $taxonomies = get_object_taxonomies('product', 'objects');
+    if (is_array($taxonomies)) {
+        foreach ($taxonomies as $tax) {
+            // Skip internal/system taxonomies that aren't assignable
+            if (!is_taxonomy_hierarchical($tax->name) && !in_array($tax->name, array('product_tag'), true)) {
+                // non-hierarchical (tags) are still fine; keep product_tag, skip visibility/type
+            }
+            if (in_array($tax->name, array('product_type', 'product_visibility', 'product_shipping_class'), true)) {
+                continue;
+            }
+            // Only include taxonomies that can be assigned to terms via UI
+            if (!empty($tax->show_ui) || !empty($tax->public)) {
+                $fields[] = array(
+                    'value' => 'taxonomy:' . $tax->name,
+                    'label' => ($tax->labels->singular_name ?? $tax->label ?? $tax->name) . ' (Taxonomy)',
+                    'group' => 'Taxonomies'
+                );
+            }
+        }
+    }
+
     // Add ACF fields if ACF is active
     if (is_acf_pro_active() && function_exists('acf_get_field_groups')) {
         $field_groups = acf_get_field_groups();
@@ -730,7 +752,7 @@ function ggt_create_product_with_mapping($mapped_data) {
         // Set all meta data
         foreach ($mapped_data as $key => $value) {
             // Skip core fields already handled (these are WC field names after mapping)
-            if (!in_array($key, ['title', 'description', 'short_description', 'sku', 'regular_price', 'sale_price', 'stock_quantity', 'backorders', 'weight', 'category', 'shipping_class', 'image_url', 'manage_stock'])) {
+            if (!in_array($key, ['title', 'description', 'short_description', 'sku', 'regular_price', 'sale_price', 'stock_quantity', 'backorders', 'weight', 'category', 'shipping_class', 'image_url', 'manage_stock']) && strpos($key, 'taxonomy:') !== 0) {
                 // Handle ACF fields (prefixed with acf_)
                 if (strpos($key, 'acf_') === 0 && function_exists('update_field')) {
                     $field_name = substr($key, 4);
@@ -748,6 +770,9 @@ function ggt_create_product_with_mapping($mapped_data) {
         } else {
             ggt_log("Product {$product_id}: No image_url in mapped data", 'IMPORT');
         }
+
+        // Apply taxonomy mappings if present
+        ggt_apply_taxonomy_mappings($product_id, $mapped_data);
     }
     
     return $product_id;
@@ -855,7 +880,7 @@ function ggt_update_product_with_mapping($product_id, $mapped_data) {
     // Update all meta data
     foreach ($mapped_data as $key => $value) {
         // Skip core fields already handled (these are WC field names after mapping)
-        if (!in_array($key, ['title', 'description', 'short_description', 'sku', 'regular_price', 'sale_price', 'stock_quantity', 'backorders', 'weight', 'category', 'shipping_class', 'image_url', 'manage_stock'])) {
+        if (!in_array($key, ['title', 'description', 'short_description', 'sku', 'regular_price', 'sale_price', 'stock_quantity', 'backorders', 'weight', 'category', 'shipping_class', 'image_url', 'manage_stock']) && strpos($key, 'taxonomy:') !== 0) {
             // Handle ACF fields (prefixed with acf_)
             if (strpos($key, 'acf_') === 0 && function_exists('update_field')) {
                 $field_name = substr($key, 4);
@@ -872,6 +897,9 @@ function ggt_update_product_with_mapping($product_id, $mapped_data) {
     } else {
         ggt_log("Product {$product_id}: No image_url in mapped data", 'IMPORT');
     }
+
+    // Apply taxonomy mappings if present
+    ggt_apply_taxonomy_mappings($product_id, $mapped_data);
     
     return true;
 }
@@ -1065,4 +1093,66 @@ function ggt_find_or_create_shipping_class($class_name) {
     }
     
     return $result['term_id'];
+}
+
+/**
+ * Parse a taxonomy terms value into an array of term names.
+ * Accepts arrays or delimited strings (comma, pipe, semicolon).
+ */
+function ggt_parse_taxonomy_terms_value($value) {
+    if (empty($value)) return array();
+    if (is_array($value)) {
+        return array_values(array_filter(array_map('trim', $value), function($v){ return $v !== ''; }));
+    }
+    if (is_string($value)) {
+        $parts = preg_split('/[\,\|;]+/', $value);
+        return array_values(array_filter(array_map('trim', $parts), function($v){ return $v !== ''; }));
+    }
+    return array();
+}
+
+/**
+ * Ensure terms exist and assign them to a product for a given taxonomy.
+ */
+function ggt_ensure_terms_and_assign($product_id, $taxonomy, $terms) {
+    if (empty($terms)) return;
+    $assign_names = array();
+    foreach ($terms as $name) {
+        if ($name === '') continue;
+        $existing = get_term_by('name', $name, $taxonomy);
+        if (!$existing || is_wp_error($existing)) {
+            $created = wp_insert_term($name, $taxonomy);
+            if (is_wp_error($created)) {
+                // Log and skip on failure
+                ggt_log("Failed creating term '{$name}' for taxonomy '{$taxonomy}': " . $created->get_error_message(), 'IMPORT');
+                continue;
+            }
+        }
+        // Using names lets WP resolve term IDs; avoids extra lookups
+        $assign_names[] = $name;
+    }
+    if (!empty($assign_names)) {
+        // Append to existing terms rather than replace, to avoid clobbering unrelated assignments
+        wp_set_object_terms($product_id, $assign_names, $taxonomy, true);
+    }
+}
+
+/**
+ * Apply taxonomy mappings found in mapped_data (keys like 'taxonomy:product_cat' => 'Boilers|Pumps').
+ */
+function ggt_apply_taxonomy_mappings($product_id, $mapped_data) {
+    foreach ($mapped_data as $key => $value) {
+        if (strpos($key, 'taxonomy:') !== 0) continue;
+        $taxonomy = substr($key, strlen('taxonomy:'));
+        if (empty($taxonomy)) continue;
+        // Only apply to taxonomies registered for products
+        $product_taxonomies = get_object_taxonomies('product');
+        if (!in_array($taxonomy, $product_taxonomies, true)) {
+            continue;
+        }
+        $terms = ggt_parse_taxonomy_terms_value($value);
+        if (!empty($terms)) {
+            ggt_ensure_terms_and_assign($product_id, $taxonomy, $terms);
+        }
+    }
 }
