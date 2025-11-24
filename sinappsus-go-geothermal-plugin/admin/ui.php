@@ -346,6 +346,13 @@ class Sinappsus_GGT_Admin_UI
                     <h3>Import Settings</h3>
                     <table class="form-table">
                         <tr valign="top">
+                            <th scope="row">Account Not Found Notification Email</th>
+                            <td>
+                                <input type="email" name="ggt_account_not_found_email" value="<?php echo esc_attr(get_option('ggt_account_not_found_email')); ?>" class="regular-text" />
+                                <p class="description">Email address to notify when an order is placed but the user account is not found/active in Sage.</p>
+                            </td>
+                        </tr>
+                        <tr valign="top">
                             <th scope="row">Enable ACF Relate</th>
                             <td>
                                 <label for="ggt_import_enable_acf_relate">
@@ -1628,6 +1635,7 @@ function ggt_sinappsus_register_settings()
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_acf_required_field');
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_acf_related_field');
     register_setting('ggt_sinappsus_settings_group', 'ggt_replace_existing_image');
+    register_setting('ggt_sinappsus_settings_group', 'ggt_account_not_found_email');
 
     // Dashboard tab
     register_setting('ggt_sinappsus_dashboard_group', 'ggt_plugin_enabled');

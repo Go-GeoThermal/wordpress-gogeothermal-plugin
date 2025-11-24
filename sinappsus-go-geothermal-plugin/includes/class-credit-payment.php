@@ -175,6 +175,28 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
                     'result'   => 'success',
                     'redirect' => $this->get_return_url($order)
                 );
+            } elseif ($response_code == 401) {
+                // Check for specific "User is not approved" message
+                $body = wp_remote_retrieve_body($response);
+                $data = json_decode($body, true);
+                if (isset($data['message']) && strpos($data['message'], 'User is not approved') !== false) {
+                    // Handle the specific error: flag order, notify admin
+                    if (function_exists('ggt_handle_account_not_found_error')) {
+                        ggt_handle_account_not_found_error($order);
+                    }
+                    
+                    // Treat as success for the user flow (transaction logged), but order is on-hold
+                    // We empty cart and redirect to thank you page where the notice will be shown
+                    WC()->cart->empty_cart();
+                    
+                    return array(
+                        'result'   => 'success',
+                        'redirect' => $this->get_return_url($order)
+                    );
+                } else {
+                    wc_add_notice(__('Something went wrong. Please contact your account manager.', 'woocommerce'), 'error');
+                    return array('result' => 'fail');
+                }
             } else {
                 wc_add_notice(__('Something went wrong. Please contact your account manager.', 'woocommerce'), 'error');
                 return array('result' => 'fail');

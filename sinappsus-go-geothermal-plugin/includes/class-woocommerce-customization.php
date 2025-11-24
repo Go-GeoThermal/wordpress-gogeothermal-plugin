@@ -544,6 +544,17 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
             $order->save();
             // Remove from queue if exists
             ggt_dequeue_pending_sales_order($order->get_id());
+        } elseif ($code == 401) {
+            // Check for specific "User is not approved" message
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+            if (isset($data['message']) && strpos($data['message'], 'User is not approved') !== false) {
+                ggt_handle_account_not_found_error($order);
+                // We don't queue for retry because it requires manual intervention
+                ggt_dequeue_pending_sales_order($order->get_id());
+            } else {
+                ggt_queue_pending_sales_order($order->get_id(), 'http_' . $code);
+            }
         } else {
             ggt_queue_pending_sales_order($order->get_id(), 'http_' . $code);
         }
@@ -839,4 +850,52 @@ function ggt_ajax_update_user_shipping_address() {
         'message' => 'Shipping address updated successfully',
         'updated_fields' => array_keys($shipping_address)
     ]);
+}
+
+// Helper to handle account not found scenarios
+function ggt_handle_account_not_found_error($order) {
+    if (!$order) return;
+
+    // 1. Flag the order
+    $order->update_status('on-hold', __('API Error: User account not found or not active in Sage. Flagged for attention.', 'sinappsus-ggt-wp-plugin'));
+    $order->add_order_note(__('Transaction logged but account not yet activated. Admin notified.', 'sinappsus-ggt-wp-plugin'));
+    $order->update_meta_data('_ggt_account_not_found', 'true');
+    $order->save();
+
+    // 2. Notify Admin
+    $admin_email = get_option('ggt_account_not_found_email');
+    if ($admin_email && is_email($admin_email)) {
+        $subject = sprintf('Action Required: Order #%s - Account Not Found', $order->get_order_number());
+        $message = sprintf(
+            "An order was placed but the user account was not found or not active in Sage.\n\n" .
+            "Order ID: %s\n" .
+            "User Email: %s\n" .
+            "User Name: %s %s\n" .
+            "Total: %s\n\n" .
+            "Please check the user account in Sage and WooCommerce.",
+            $order->get_order_number(),
+            $order->get_billing_email(),
+            $order->get_billing_first_name(),
+            $order->get_billing_last_name(),
+            $order->get_formatted_order_total()
+        );
+        
+        // Ensure email is sent as plain text
+        $headers = array('Content-Type: text/plain; charset=UTF-8');
+        wp_mail($admin_email, $subject, $message, $headers);
+    }
+}
+
+// Display notice on Thank You page if account was not found
+add_action('woocommerce_thankyou', 'ggt_display_account_not_found_notice');
+function ggt_display_account_not_found_notice($order_id) {
+    $order = wc_get_order($order_id);
+    if (!$order) return;
+
+    if ($order->get_meta('_ggt_account_not_found') === 'true') {
+        echo '<div class="woocommerce-message notice notice-warning notice-alt" role="alert">';
+        echo '<h4 style="margin-top:0;">' . __('Attention Required', 'sinappsus-ggt-wp-plugin') . '</h4>';
+        echo '<p>' . __('Your transaction has been logged, but your account is not yet fully activated. Someone from Go Geothermal will be in touch with you shortly to finalize your order.', 'sinappsus-ggt-wp-plugin') . '</p>';
+        echo '</div>';
+    }
 }
