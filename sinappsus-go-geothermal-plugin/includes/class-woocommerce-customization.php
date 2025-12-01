@@ -298,7 +298,13 @@ function ggt_store_selected_delivery_data($order, $data) {
 // Register the delivery date as a custom order field to ensure it shows in admin and REST API
 add_filter('woocommerce_api_order_response', 'ggt_add_delivery_date_to_api_response', 10, 2);
 function ggt_add_delivery_date_to_api_response($order_data, $order) {
-    $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
+    $order_id = $order->get_id();
+    $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
+    
+    // Fallback checks
+    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'ggt_delivery_date_selected', true);
+    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, '_delivery_date', true);
+    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'delivery_date', true);
     
     if (!empty($delivery_date)) {
         $order_data['delivery_date'] = $delivery_date;
@@ -310,7 +316,20 @@ function ggt_add_delivery_date_to_api_response($order_data, $order) {
 // Display the delivery date in admin order page (enhanced)
 add_action('woocommerce_admin_order_data_after_billing_address', 'ggt_display_delivery_date_in_admin');
 function ggt_display_delivery_date_in_admin($order) {
-    $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
+    $order_id = $order->get_id();
+    $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
+    
+    // Fallback checks for other meta keys
+    if (empty($delivery_date)) {
+        $delivery_date = get_post_meta($order_id, 'ggt_delivery_date_selected', true);
+    }
+    if (empty($delivery_date)) {
+        $delivery_date = get_post_meta($order_id, '_delivery_date', true);
+    }
+    if (empty($delivery_date)) {
+        $delivery_date = get_post_meta($order_id, 'delivery_date', true);
+    }
+
     if ($delivery_date) {
         $formatted_date = date_i18n(get_option('date_format'), strtotime($delivery_date));
         echo '<div class="order_data_column" style="clear:both; margin-top:15px; padding:10px; background:#f8f8f8; border:1px solid #e5e5e5;">';
@@ -329,7 +348,14 @@ function ggt_display_delivery_date_in_admin($order) {
 add_action('woocommerce_order_details_after_order_table', 'ggt_display_delivery_date_on_order_details');
 add_action('woocommerce_email_order_meta', 'ggt_display_delivery_date_on_order_details');
 function ggt_display_delivery_date_on_order_details($order) {
-    $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
+    $order_id = $order->get_id();
+    $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
+    
+    // Fallback checks
+    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'ggt_delivery_date_selected', true);
+    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, '_delivery_date', true);
+    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'delivery_date', true);
+
     if ($delivery_date) {
         $formatted_date = date_i18n(get_option('date_format'), strtotime($delivery_date));
         echo '<div class="ggt-delivery-date-display">';
@@ -343,7 +369,14 @@ function ggt_display_delivery_date_on_order_details($order) {
 add_action('woocommerce_order_details_before_order_table', 'ggt_display_delivery_date_before_order_table');
 function ggt_display_delivery_date_before_order_table($order) {
     // Display prominently at the top of the order details
-    $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
+    $order_id = $order->get_id();
+    $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
+    
+    // Fallback checks
+    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'ggt_delivery_date_selected', true);
+    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, '_delivery_date', true);
+    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'delivery_date', true);
+
     if ($delivery_date) {
         $formatted_date = date_i18n(get_option('date_format'), strtotime($delivery_date));
         echo '<div class="ggt-delivery-summary">';
