@@ -123,28 +123,57 @@ function ggt_delivery_date_field_footer_fallback() {
 // Fix validation and saving of delivery date
 add_action('woocommerce_checkout_process', 'ggt_validate_delivery_date');
 function ggt_validate_delivery_date() {
+    // Debug logging
+    $debug_post = $_POST;
+    // Remove sensitive data
+    unset($debug_post['payment_method'], $debug_post['woocommerce_checkout_place_order'], $debug_post['_wpnonce']);
+    error_log('GGT Validation: Starting validation. POST keys: ' . implode(', ', array_keys($debug_post)));
+    if (isset($_POST['ggt_delivery_date'])) {
+        error_log('GGT Validation: ggt_delivery_date value: "' . $_POST['ggt_delivery_date'] . '"');
+    } else {
+        error_log('GGT Validation: ggt_delivery_date is NOT set');
+    }
+
     // Check for the delivery date in multiple possible form fields
     $delivery_date = null;
     
-    if (!empty($_POST['ggt_delivery_date'])) {
-        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
-    } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
+    // Prioritize the hidden field which is ISO formatted by JS
+    if (!empty($_POST['ggt_delivery_date_hidden'])) {
         $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
+        error_log("GGT Validation: Using hidden field value: '$delivery_date'");
+    } elseif (!empty($_POST['ggt_delivery_date'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+        error_log("GGT Validation: Using main field value: '$delivery_date'");
+        
+        // Handle UK date format (dd/mm/yyyy) -> convert to d-m-y for strtotime
+        if (strpos($delivery_date, '/') !== false) {
+            $delivery_date = str_replace('/', '-', $delivery_date);
+            error_log("GGT Validation: Converted UK format to: '$delivery_date'");
+        }
     }
     
-    // If still no date found, check other possible field names
+    /* 
+    // Disable loose fallback loop as it might be picking up irrelevant fields
     if (empty($delivery_date)) {
         foreach ($_POST as $key => $value) {
             if (strpos($key, 'delivery_date') !== false && !empty($value)) {
+                error_log("GGT Validation: Found fallback field '$key' with value '$value'");
                 $delivery_date = sanitize_text_field($value);
                 break;
             }
         }
     }
+    */
+    
+    if (!empty($delivery_date)) {
+        error_log("GGT Validation: Final delivery_date to validate: '$delivery_date'");
+    } else {
+        error_log("GGT Validation: No delivery date found. Adding error notice.");
+    }
     
     // If no date is found in any field, show error
-    if (empty($delivery_date)) {
-        wc_add_notice(__('Please select a delivery date.'), 'error');
+    if (empty($delivery_date) || $delivery_date === 'undefined' || $delivery_date === 'null') {
+        wc_add_notice(__('Please select a delivery date.', 'woocommerce'), 'error');
         return;
     }
     
@@ -153,25 +182,65 @@ function ggt_validate_delivery_date() {
     
     // Check if it's a valid date
     if (!$date_timestamp) {
-        wc_add_notice(__('The delivery date is not valid.'), 'error');
+        wc_add_notice(__('The delivery date is not valid.', 'woocommerce'), 'error');
         return;
     }
     
-    // Ensure the date is at least 2 days in the future
-    if ($date_timestamp < strtotime('+2 days', $today)) {
-        wc_add_notice(__('The delivery date must be at least 2 business days from today.'), 'error');
+    // Calculate minimum allowed date based on cutoff time
+    $min_days = function_exists('ggt_calculate_min_delivery_offset') ? ggt_calculate_min_delivery_offset() : 1;
+    
+    // Ensure the date is valid based on our cutoff rules
+    if ($date_timestamp < strtotime("+$min_days days", $today)) {
+        wc_add_notice(__('Please select a valid delivery date from the calendar.', 'woocommerce'), 'error');
         return;
     }
     
     // Check if it's a weekend
     $day_of_week = date('N', $date_timestamp);
     if ($day_of_week >= 6) { // 6 = Saturday, 7 = Sunday
-        wc_add_notice(__('Deliveries are not available on weekends.'), 'error');
+        wc_add_notice(__('Deliveries are not available on weekends.', 'woocommerce'), 'error');
         return;
     }
     
     // Store validated date in session for later use
-    WC()->session->set('ggt_validated_delivery_date', $delivery_date);
+    if (WC()->session) {
+        WC()->session->set('ggt_validated_delivery_date', $delivery_date);
+    }
+}
+
+// Add modern validation hook as a backup
+add_action('woocommerce_after_checkout_validation', 'ggt_validate_delivery_date_modern', 10, 2);
+function ggt_validate_delivery_date_modern($data, $errors) {
+    error_log('GGT Validation Modern: Starting validation.');
+    
+    $delivery_date = null;
+    
+    // Prioritize the hidden field which is ISO formatted by JS
+    if (!empty($_POST['ggt_delivery_date_hidden'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
+    } elseif (!empty($_POST['ggt_delivery_date'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+        
+        // Handle UK date format (dd/mm/yyyy) -> convert to d-m-y for strtotime
+        if (strpos($delivery_date, '/') !== false) {
+            $delivery_date = str_replace('/', '-', $delivery_date);
+        }
+    }
+    
+    /*
+    if (empty($delivery_date)) {
+        foreach ($_POST as $key => $value) {
+            if (strpos($key, 'delivery_date') !== false && !empty($value)) {
+                $delivery_date = sanitize_text_field($value);
+                break;
+            }
+        }
+    }
+    */
+    
+    if (empty($delivery_date) || $delivery_date === 'undefined' || $delivery_date === 'null') {
+        $errors->add('delivery_date_required', __('Please select a delivery date.', 'woocommerce'));
+    }
 }
 
 // Remove all previous hooks for saving delivery date to prevent conflicts
@@ -183,13 +252,22 @@ function ggt_improved_save_delivery_date($order_id) {
     $delivery_date = null;
     
     // Check multiple sources for the delivery date
-    if (!empty($_POST['ggt_delivery_date'])) {
-        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
-    } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
+    // Prioritize the hidden field which is ISO formatted by JS
+    if (!empty($_POST['ggt_delivery_date_hidden'])) {
         $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
+    } elseif (!empty($_POST['ggt_delivery_date'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+        
+        // Handle UK date format (dd/mm/yyyy) -> convert to d-m-y for strtotime/saving
+        if (strpos($delivery_date, '/') !== false) {
+            $delivery_date = str_replace('/', '-', $delivery_date);
+        }
     } elseif (WC()->session && WC()->session->get('ggt_validated_delivery_date')) {
         $delivery_date = WC()->session->get('ggt_validated_delivery_date');
-    } else {
+    }
+    
+    /*
+    else {
         // Last attempt - check any POST field with delivery_date in the name
         foreach ($_POST as $key => $value) {
             if (strpos($key, 'delivery_date') !== false && !empty($value)) {
@@ -198,6 +276,7 @@ function ggt_improved_save_delivery_date($order_id) {
             }
         }
     }
+    */
     
     if (!empty($delivery_date)) {
         // Save using multiple meta keys for compatibility
@@ -231,10 +310,16 @@ function ggt_capture_delivery_date_early($order, $data) {
     $delivery_date = null;
     
     // Check all possible sources for the date
-    if (!empty($_POST['ggt_delivery_date'])) {
-        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
-    } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
+    // Prioritize the hidden field which is ISO formatted by JS
+    if (!empty($_POST['ggt_delivery_date_hidden'])) {
         $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
+    } elseif (!empty($_POST['ggt_delivery_date'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+        
+        // Handle UK date format (dd/mm/yyyy) -> convert to d-m-y
+        if (strpos($delivery_date, '/') !== false) {
+            $delivery_date = str_replace('/', '-', $delivery_date);
+        }
     }
 }
 
@@ -244,10 +329,16 @@ function ggt_add_delivery_date_to_order($order, $data) {
     // Get delivery date from various possible sources
     $delivery_date = null;
     
-    if (!empty($_POST['ggt_delivery_date'])) {
-        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
-    } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
+    // Prioritize the hidden field which is ISO formatted by JS
+    if (!empty($_POST['ggt_delivery_date_hidden'])) {
         $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
+    } elseif (!empty($_POST['ggt_delivery_date'])) {
+        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
+        
+        // Handle UK date format (dd/mm/yyyy) -> convert to d-m-y
+        if (strpos($delivery_date, '/') !== false) {
+            $delivery_date = str_replace('/', '-', $delivery_date);
+        }
     } elseif (WC()->session && WC()->session->get('ggt_validated_delivery_date')) {
         $delivery_date = WC()->session->get('ggt_validated_delivery_date');
     }

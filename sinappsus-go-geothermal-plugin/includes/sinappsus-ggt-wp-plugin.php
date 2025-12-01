@@ -65,7 +65,57 @@ function ggt_enqueue_delivery_date_script() {
             filemtime(GGT_SINAPPSUS_PLUGIN_PATH . '/assets/js/delivery-date-picker.js'),
             true
         );
+
+        // Calculate min date offset based on 12pm cutoff
+        $min_date_offset = ggt_calculate_min_delivery_offset();
+
+        wp_localize_script('ggt-delivery-date-picker', 'ggt_vars', array(
+            'min_date_offset' => $min_date_offset
+        ));
     }
+}
+
+function ggt_calculate_min_delivery_offset() {
+    $now = current_time('timestamp');
+    $hour = (int) date('G', $now);
+    $day_of_week = (int) date('N', $now); // 1 (Mon) to 7 (Sun)
+    
+    $days_to_add = 1; // Default: Next day
+
+    if ($day_of_week >= 6) {
+        // Weekend: Order processed Monday, delivered Tuesday
+        // Saturday (6) -> Tuesday (+3)
+        // Sunday (7) -> Tuesday (+2)
+        $days_to_add = ($day_of_week == 6) ? 3 : 2;
+    } else {
+        // Weekday
+        if ($hour >= 12) {
+            // After 12pm: Processed tomorrow
+            // If today is Friday (5) -> Processed Monday -> Delivered Tuesday (+4)
+            // If today is Thursday (4) -> Processed Friday -> Delivered Monday (+4)
+            // If today is Mon-Wed -> Processed Tomorrow -> Delivered Day After (+2)
+            
+            if ($day_of_week == 5) { // Friday
+                $days_to_add = 4; // Tuesday
+            } elseif ($day_of_week == 4) { // Thursday
+                $days_to_add = 4; // Monday
+            } else {
+                $days_to_add = 2;
+            }
+        } else {
+            // Before 12pm: Processed today
+            // If today is Friday (5) -> Delivered Monday (+3)
+            // If today is Mon-Thu -> Delivered Tomorrow (+1)
+            
+            if ($day_of_week == 5) { // Friday
+                $days_to_add = 3; // Monday
+            } else {
+                $days_to_add = 1;
+            }
+        }
+    }
+    
+    return $days_to_add;
 }
 
 // Make sure rewrite rules are flushed when needed

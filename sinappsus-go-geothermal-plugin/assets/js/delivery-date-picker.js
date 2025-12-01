@@ -102,9 +102,15 @@
         if (!$('#ggt_delivery_date').length) return;
         if ($('#ggt_delivery_date').hasClass('hasDatepicker')) return;
         
+        // Get min date offset from server, default to +1d if not set
+        let minDateOffset = '+1d';
+        if (typeof ggt_vars !== 'undefined' && ggt_vars.min_date_offset) {
+            minDateOffset = '+' + ggt_vars.min_date_offset + 'd';
+        }
+
         $('#ggt_delivery_date').datepicker({
             dateFormat: 'dd/mm/yy', // UK date format
-            minDate: '+1d',
+            minDate: minDateOffset,
             maxDate: '+6m',
             beforeShowDay: function(date) {
                 // Check if it's a weekend
