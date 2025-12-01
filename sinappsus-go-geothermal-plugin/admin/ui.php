@@ -1027,6 +1027,7 @@ class Sinappsus_GGT_Admin_UI
                 let userAvailableApiFields = [];
                 let userCurrentMapping = {};
                 let userEnabledFields = {};
+                let userCustomLabels = {};
 
                 document.getElementById('configure-import-button').addEventListener('click', function() {
                     document.getElementById('flexible-import-modal').style.display = 'block';
@@ -1057,8 +1058,10 @@ class Sinappsus_GGT_Admin_UI
                         if (mapRes.success && mapRes.data) {
                             userCurrentMapping = mapRes.data.mapping || {};
                             userEnabledFields = mapRes.data.enabled_fields || {};
+                            userCustomLabels = mapRes.data.custom_labels || {};
                             if (Array.isArray(userCurrentMapping)) userCurrentMapping = {};
                             if (Array.isArray(userEnabledFields)) userEnabledFields = {};
+                            if (Array.isArray(userCustomLabels)) userCustomLabels = {};
                         }
                         renderUserFieldMapping();
                     });
@@ -1078,14 +1081,16 @@ class Sinappsus_GGT_Admin_UI
                 function renderUserFieldMapping() {
                     let html = '<table class="wp-list-table widefat fixed"><thead><tr>' +
                                '<th style="width:10%;">Enable</th>' +
-                               '<th style="width:40%;">API Field</th>' +
-                               '<th style="width:40%;">Target Field</th>' +
+                               '<th style="width:30%;">API Field</th>' +
+                               '<th style="width:30%;">Target Field</th>' +
+                               '<th style="width:20%;">Custom Label</th>' +
                                '<th style="width:10%;">Action</th>' +
                                '</tr></thead><tbody>';
 
                     userAvailableApiFields.forEach(apiField => {
                         const mappedTo = userCurrentMapping[apiField] || '';
                         const isEnabled = userEnabledFields[apiField] !== false; // default true
+                        const customLabel = userCustomLabels[apiField] || '';
                         html += '<tr>' +
                                 '<td style="text-align:center;"><input type="checkbox" class="user-field-enabled" data-api-field="' + apiField + '" ' + (isEnabled ? 'checked' : '') + '></td>' +
                                 '<td><strong>' + apiField + '</strong></td>' +
@@ -1102,6 +1107,7 @@ class Sinappsus_GGT_Admin_UI
                             html += '<option value="' + field.value + '" ' + selected + '>' + field.label + '</option>';
                         });
                         html += '</optgroup></select></td>' +
+                                '<td><input type="text" class="user-field-label" data-api-field="' + apiField + '" value="' + customLabel + '" placeholder="Default Label" style="width:100%"></td>' +
                                 '<td><button type="button" class="button user-clear-map" data-api-field="' + apiField + '">Clear</button></td>' +
                                 '</tr>';
                     });
@@ -1128,10 +1134,17 @@ class Sinappsus_GGT_Admin_UI
                             }
                         });
                     });
+                    document.querySelectorAll('.user-field-label').forEach(inp => {
+                        inp.addEventListener('change', function() {
+                            const k = this.getAttribute('data-api-field');
+                            userCustomLabels[k] = this.value;
+                        });
+                    });
                     document.querySelectorAll('.user-clear-map').forEach(btn => {
                         btn.addEventListener('click', function() {
                             const k = this.getAttribute('data-api-field');
                             delete userCurrentMapping[k];
+                            delete userCustomLabels[k];
                             renderUserFieldMapping();
                         });
                     });
@@ -1152,7 +1165,8 @@ class Sinappsus_GGT_Admin_UI
                     jQuery.post(ajaxurl, {
                         action: 'ggt_users_save_field_mapping',
                         mapping: JSON.stringify(userCurrentMapping),
-                        enabled_fields: JSON.stringify(userEnabledFields)
+                        enabled_fields: JSON.stringify(userEnabledFields),
+                        custom_labels: JSON.stringify(userCustomLabels)
                     }).done(function(res){
                         if (res.success) {
                             alert('User mapping saved.');

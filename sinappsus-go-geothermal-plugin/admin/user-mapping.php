@@ -55,12 +55,12 @@ function ggt_get_supported_user_api_fields_with_labels() {
         'countryCode' => 'Country Code',
 
         // Delivery/Shipping (include synonyms)
-        'deliveryName' => 'Delivery Name (synonym)',
-        'deliveryAddress1' => 'Delivery Address 1 (synonym)',
-        'deliveryAddress2' => 'Delivery Address 2 (synonym)',
-        'deliveryAddress3' => 'Delivery Address 3 (City) (synonym)',
-        'deliveryAddress4' => 'Delivery Address 4 (State/County) (synonym)',
-        'deliveryAddress5' => 'Delivery Address 5 (Postcode) (synonym)',
+        'deliveryName' => 'Delivery Name ',
+        'deliveryAddress1' => 'Delivery Address 1 ',
+        'deliveryAddress2' => 'Delivery Address 2 ',
+        'deliveryAddress3' => 'Delivery Address 3 (City) ',
+        'deliveryAddress4' => 'Delivery Address 4 (State/County) ',
+        'deliveryAddress5' => 'Delivery Address 5 (Postcode) ',
         'delName' => 'Delivery Name',
         'delAddress1' => 'Delivery Address 1',
         'delAddress2' => 'Delivery Address 2',
@@ -73,7 +73,7 @@ function ggt_get_supported_user_api_fields_with_labels() {
         'currency' => 'Currency',
         'creditLimit' => 'Credit Limit',
         'vatRegNumber' => 'VAT Registration Number',
-        'vatNumber' => 'VAT Number (synonym)',
+        'vatNumber' => 'VAT Number ',
         'eoriNumber' => 'EORI Number',
         'bacsRef' => 'BACS Reference',
         'iban' => 'IBAN',
@@ -199,6 +199,7 @@ function ggt_users_save_field_mapping() {
 
     $mapping = array();
     $enabled = array();
+    $custom_labels = array();
 
     if (isset($_POST['mapping'])) {
         $mapping = is_string($_POST['mapping']) ? json_decode(stripslashes($_POST['mapping']), true) : $_POST['mapping'];
@@ -206,17 +207,23 @@ function ggt_users_save_field_mapping() {
     if (isset($_POST['enabled_fields'])) {
         $enabled = is_string($_POST['enabled_fields']) ? json_decode(stripslashes($_POST['enabled_fields']), true) : $_POST['enabled_fields'];
     }
+    if (isset($_POST['custom_labels'])) {
+        $custom_labels = is_string($_POST['custom_labels']) ? json_decode(stripslashes($_POST['custom_labels']), true) : $_POST['custom_labels'];
+    }
 
     if (!is_array($mapping)) $mapping = array();
     if (!is_array($enabled)) $enabled = array();
+    if (!is_array($custom_labels)) $custom_labels = array();
 
     update_option('ggt_user_field_mapping', $mapping);
     update_option('ggt_user_field_mapping_enabled', $enabled);
+    update_option('ggt_user_field_labels', $custom_labels);
 
     wp_send_json_success(array(
         'message' => 'User field mapping saved',
         'mapping' => $mapping,
         'enabled_fields' => $enabled,
+        'custom_labels' => $custom_labels,
     ));
 }
 
@@ -228,10 +235,12 @@ function ggt_users_get_field_mapping() {
 
     $mapping = get_option('ggt_user_field_mapping', array());
     $enabled = get_option('ggt_user_field_mapping_enabled', array());
+    $custom_labels = get_option('ggt_user_field_labels', array());
 
     // Normalize to arrays for merging defaults
     if (is_object($mapping)) { $mapping = (array)$mapping; }
     if (is_object($enabled)) { $enabled = (array)$enabled; }
+    if (is_object($custom_labels)) { $custom_labels = (array)$custom_labels; }
 
     // Seed vital defaults: ensure accountRef and creditLimit are always mapped
     $changed = false;
@@ -254,10 +263,12 @@ function ggt_users_get_field_mapping() {
 
     if (empty($mapping)) $mapping = new stdClass();
     if (empty($enabled)) $enabled = new stdClass();
+    if (empty($custom_labels)) $custom_labels = new stdClass();
 
     wp_send_json_success(array(
         'mapping' => $mapping,
         'enabled_fields' => $enabled,
+        'custom_labels' => $custom_labels,
     ));
 }
 
@@ -268,6 +279,7 @@ function ggt_users_reset_field_mapping() {
     }
     delete_option('ggt_user_field_mapping');
     delete_option('ggt_user_field_mapping_enabled');
+    delete_option('ggt_user_field_labels');
     wp_send_json_success(array('message' => 'User mapping reset'));
 }
 
@@ -317,5 +329,14 @@ function ggt_update_user_targets($user_id, $mapped_targets) {
  * Return list of registration fields (API field keys => Labels)
  */
 function ggt_get_registration_fields_catalog() {
-    return ggt_get_supported_user_api_fields_with_labels();
+    $defaults = ggt_get_supported_user_api_fields_with_labels();
+    $custom = get_option('ggt_user_field_labels', array());
+    if (is_object($custom)) { $custom = (array)$custom; }
+    
+    foreach ($custom as $key => $label) {
+        if (!empty($label) && isset($defaults[$key])) {
+            $defaults[$key] = $label;
+        }
+    }
+    return $defaults;
 }
