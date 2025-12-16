@@ -102,16 +102,26 @@
         if (!$('#ggt_delivery_date').length) return;
         if ($('#ggt_delivery_date').hasClass('hasDatepicker')) return;
         
-        // Get min date offset from server, default to +1d if not set
-        let minDateOffset = '+1d';
-        if (typeof ggt_vars !== 'undefined' && ggt_vars.min_date_offset) {
-            minDateOffset = '+' + ggt_vars.min_date_offset + 'd';
+        // Calculate next valid business day for minDate
+        let minDate = new Date();
+        minDate.setDate(minDate.getDate() + 1); // Start from tomorrow
+        
+        // Keep advancing if weekend or holiday
+        while (true) {
+            const day = minDate.getDay();
+            const dateString = $.datepicker.formatDate('yy-mm-dd', minDate);
+            
+            if (day === 0 || day === 6 || $.inArray(dateString, ukHolidays) !== -1) {
+                minDate.setDate(minDate.getDate() + 1);
+            } else {
+                break;
+            }
         }
 
         $('#ggt_delivery_date').datepicker({
             dateFormat: 'dd/mm/yy', // UK date format
-            minDate: minDateOffset,
-            maxDate: '+6m',
+            minDate: minDate,
+            maxDate: '+12m',
             beforeShowDay: function(date) {
                 // Check if it's a weekend
                 const day = date.getDay();
