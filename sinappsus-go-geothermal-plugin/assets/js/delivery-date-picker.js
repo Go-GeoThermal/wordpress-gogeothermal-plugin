@@ -104,7 +104,16 @@
         
         // Calculate next valid business day for minDate
         let minDate = new Date();
-        minDate.setDate(minDate.getDate() + 1); // Start from tomorrow
+        // Reset time to midnight to avoid issues where current time > 00:00 makes the calculated date unavailable
+        minDate.setHours(0, 0, 0, 0);
+        
+        // Get min date offset from server, default to 1 day if not set
+        let daysToAdd = 1;
+        if (typeof ggt_vars !== 'undefined' && ggt_vars.min_date_offset) {
+            daysToAdd = parseInt(ggt_vars.min_date_offset);
+        }
+        
+        minDate.setDate(minDate.getDate() + daysToAdd);
         
         // Keep advancing if weekend or holiday
         while (true) {
