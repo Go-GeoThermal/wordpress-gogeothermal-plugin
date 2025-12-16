@@ -397,63 +397,16 @@
                             updateTotalsFromServer(response.data);
                         }
                         
-                        // Try multiple refresh strategies
-                        console.log('🔄 [GGT] Attempting to refresh checkout display...');
-                        
-                        // Strategy 1: Update visible prices immediately
-                        updateVisiblePrices(prices);
-                        
-                        // Strategy 2: Force WooCommerce to recalculate totals
-                        $('body').trigger('update_checkout');
-                        
-                        // Strategy 3: Trigger cart calculation refresh
-                        $('body').trigger('wc_update_cart');
-                        
-                        // Strategy 4: Force checkout fragments refresh
-                        setTimeout(function() {
-                            $('body').trigger('updated_checkout');
-                            console.log('✅ [GGT] Triggered checkout refresh events');
-                        }, 500);
-                        
-                        // Debug: Log what's actually in the DOM
-                        debugDOMElements();
-                        
-                        // Strategy 2: Trigger WooCommerce checkout update
-                        $('body').trigger('update_checkout');
-                        
-                        // Strategy 3: Force WooCommerce to recalculate and refresh fragments
-                        $.ajax({
-                            url: ggt_checkout_data.ajax_url,
-                            type: 'POST',
-                            data: {
-                                action: 'woocommerce_get_refreshed_fragments',
-                                applied_coupons: [],
-                                nonce: ggt_checkout_data.nonce
-                            },
-                            success: function(fragmentsResponse) {
-                                console.log('🔄 [GGT] Fragments refreshed:', fragmentsResponse);
-                                // Force a complete page refresh if needed
-                                if (fragmentsResponse && fragmentsResponse.fragments) {
-                                    // Apply fragments manually or trigger body update
-                                    $(document.body).trigger('wc_fragments_loaded');
-                                }
-                            },
-                            error: function(xhr, status, error) {
-                                console.error('❌ [GGT] Error refreshing fragments:', error);
-                            }
-                        });
-                        
-                        // Strategy 4: Force reload checkout fragments after a delay
-                        setTimeout(function() {
-                            console.log('🔄 [GGT] Triggering delayed checkout refresh...');
-                            $('body').trigger('updated_checkout');
-                            
-                            // Final attempt - checking if prices updated
-                            setTimeout(function() {
-                                console.log('🔄 [GGT] Final attempt - checking if prices updated...');
-                                updateVisiblePrices(prices);
-                            }, 1000);
-                        }, 500);
+                        // Force page reload if prices were updated on server
+                        if (response.data && response.data.updated) {
+                            console.log('🔄 [GGT] Prices updated on server. Forcing page reload to ensure correct display...');
+                            window.location.reload();
+                        } else {
+                            // Fallback: Update visible prices immediately if server didn't report an update
+                            console.log('🔄 [GGT] Server reported no changes, but attempting client-side update...');
+                            updateVisiblePrices(prices);
+                            $('body').trigger('update_checkout');
+                        }
                         
                     } else {
                         console.error('❌ [GGT] Failed to update cart prices:', response);
