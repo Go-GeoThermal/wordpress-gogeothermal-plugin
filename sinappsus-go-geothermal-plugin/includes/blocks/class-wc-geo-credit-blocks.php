@@ -132,7 +132,7 @@ class WC_Geo_Credit_Blocks_Support extends AbstractPaymentMethodType {
         
         return [
             'title'       => 'Credit Payment',
-            'description' => 'Use your available credit to checkout. Your available credit is ' . wc_price($available_credit),
+            'description' => 'Use your available credit to checkout. Your available credit is ' . strip_tags(wc_price($available_credit)),
             'supports'    => [
                 'products',
             ],

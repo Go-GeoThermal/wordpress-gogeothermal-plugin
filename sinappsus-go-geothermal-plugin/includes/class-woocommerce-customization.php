@@ -565,12 +565,14 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         }
     }
     
-    // Calculate shipping net total with fallback
-    $carrNet = $order->get_shipping_total();
+    // Calculate shipping gross total (Net + Tax) with fallback
+    // User requested "shipping total with its vat" to be passed as carrNet
+    $carrNet = floatval($order->get_shipping_total()) + floatval($order->get_shipping_tax());
+    
     if (empty($carrNet) || floatval($carrNet) == 0) {
         $shipping_total = 0;
         foreach ($order->get_shipping_methods() as $shipping_item) {
-            $shipping_total += floatval($shipping_item->get_total());
+            $shipping_total += floatval($shipping_item->get_total()) + floatval($shipping_item->get_total_tax());
         }
         $carrNet = $shipping_total;
     }
@@ -605,6 +607,10 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
             'order_id' => $order->get_id(),
             'endpoint' => $endpoint,
             'payment_provider' => $payment_method,
+            'shipping_debug' => [
+                'get_shipping_total' => $order->get_shipping_total(),
+                'calculated_carrNet' => $carrNet
+            ],
             'payload' => $order_data,
         ]);
     } else {
