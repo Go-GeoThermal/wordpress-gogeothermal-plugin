@@ -565,6 +565,16 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         }
     }
     
+    // Calculate shipping net total with fallback
+    $carrNet = $order->get_shipping_total();
+    if (empty($carrNet) || floatval($carrNet) == 0) {
+        $shipping_total = 0;
+        foreach ($order->get_shipping_methods() as $shipping_item) {
+            $shipping_total += floatval($shipping_item->get_total());
+        }
+        $carrNet = $shipping_total;
+    }
+
     $order_data = [
         'woocommerce_order_id' => $order->get_id(),
         'user_id'              => $user_id,
@@ -582,7 +592,7 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         'delivery_date'        => $formatted_delivery_date,
         'delivery_address'     => $delivery_address,
         'customer_note'        => $order->get_customer_note(),
-        'carrNet'              => $order->get_shipping_total()
+        'carrNet'              => $carrNet
     ];
 
     // =============================
