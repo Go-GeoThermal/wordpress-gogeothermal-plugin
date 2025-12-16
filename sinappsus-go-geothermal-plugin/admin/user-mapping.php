@@ -252,9 +252,14 @@ function ggt_users_get_field_mapping() {
         $mapping['creditLimit'] = 'creditLimit';
         $changed = true;
     }
+    if (!isset($mapping['balance'])) {
+        $mapping['balance'] = 'balance';
+        $changed = true;
+    }
     // Set both disabled by default for registration visibility (still imported)
     if (!isset($enabled['accountRef'])) { $enabled['accountRef'] = false; $changed = true; }
     if (!isset($enabled['creditLimit'])) { $enabled['creditLimit'] = false; $changed = true; }
+    if (!isset($enabled['balance'])) { $enabled['balance'] = false; $changed = true; }
 
     if ($changed) {
         update_option('ggt_user_field_mapping', $mapping);

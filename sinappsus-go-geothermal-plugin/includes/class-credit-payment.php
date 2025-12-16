@@ -72,7 +72,20 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             $credit_limit = get_user_meta($user_id, 'credit_limit', true);
         }
 
-        if (empty($credit_limit) || floatval($credit_limit) < floatval($cart_total)) {
+        // Get current balance
+        $balance = get_user_meta($user_id, 'Balance', true);
+        if (empty($balance)) {
+            $balance = get_user_meta($user_id, 'balance', true);
+        }
+        // Default balance to 0 if not set
+        if (empty($balance)) {
+            $balance = 0;
+        }
+
+        // Calculate available credit
+        $available_credit = floatval($credit_limit) - floatval($balance);
+
+        if (empty($credit_limit) || $available_credit < floatval($cart_total)) {
             return false;
         }
 
@@ -140,17 +153,30 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             $credit_limit = get_user_meta($user_id, 'credit_limit', true);
         }
 
-        if (!empty($credit_limit) && floatval($credit_limit) >= floatval($order->get_total())) {
-            // Figure out which key to use for updating
-            $credit_key = 'creditLimit'; // Default
-            if (get_user_meta($user_id, 'CreditLimit', true) !== '') {
-                $credit_key = 'CreditLimit';
-            } else if (get_user_meta($user_id, 'credit_limit', true) !== '') {
-                $credit_key = 'credit_limit';
+        // Get current balance
+        $balance = get_user_meta($user_id, 'Balance', true);
+        if (empty($balance)) {
+            $balance = get_user_meta($user_id, 'balance', true);
+        }
+        // Default balance to 0 if not set
+        if (empty($balance)) {
+            $balance = 0;
+        }
+
+        // Calculate available credit
+        $available_credit = floatval($credit_limit) - floatval($balance);
+
+        if (!empty($credit_limit) && $available_credit >= floatval($order->get_total())) {
+            // Figure out which key to use for updating balance
+            $balance_key = 'Balance'; // Default
+            if (get_user_meta($user_id, 'Balance', true) !== '') {
+                $balance_key = 'Balance';
+            } else if (get_user_meta($user_id, 'balance', true) !== '') {
+                $balance_key = 'balance';
             }
 
-            // Deduct the order total from user's credit
-            update_user_meta($user_id, $credit_key, floatval($credit_limit) - floatval($order->get_total()));
+            // Increase the balance by the order total
+            update_user_meta($user_id, $balance_key, floatval($balance) + floatval($order->get_total()));
 
             // Send order details to external API
             $response = $this->send_order_to_api($order, $delivery_date);

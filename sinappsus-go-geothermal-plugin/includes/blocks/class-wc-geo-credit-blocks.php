@@ -96,6 +96,7 @@ class WC_Geo_Credit_Blocks_Support extends AbstractPaymentMethodType {
      */
     public function get_payment_method_data() {
         $credit_limit = 0;
+        $available_credit = 0;
         
         if (is_user_logged_in()) {
             $user_id = get_current_user_id();
@@ -112,17 +113,30 @@ class WC_Geo_Credit_Blocks_Support extends AbstractPaymentMethodType {
             if (!$credit_limit) {
                 $credit_limit = 0;
             }
+
+            // Get current balance
+            $balance = get_user_meta($user_id, 'Balance', true);
+            if (empty($balance)) {
+                $balance = get_user_meta($user_id, 'balance', true);
+            }
+            // Default balance to 0 if not set
+            if (empty($balance)) {
+                $balance = 0;
+            }
+
+            // Calculate available credit
+            $available_credit = floatval($credit_limit) - floatval($balance);
         }
         
-        wc_get_logger()->info('Geo Credit Blocks data prepared. Credit limit: ' . $credit_limit, ['source' => 'geo-credit-blocks']);
+        wc_get_logger()->info('Geo Credit Blocks data prepared. Credit limit: ' . $credit_limit . ', Available: ' . $available_credit, ['source' => 'geo-credit-blocks']);
         
         return [
             'title'       => 'Credit Payment',
-            'description' => 'Use your available credit to checkout. Your current credit limit is ' . wc_price($credit_limit),
+            'description' => 'Use your available credit to checkout. Your available credit is ' . wc_price($available_credit),
             'supports'    => [
                 'products',
             ],
-            'credit_limit' => $credit_limit,
+            'credit_limit' => $available_credit,
         ];
     }
 }

@@ -13,12 +13,18 @@
         try {
             var registerPaymentMethod = window.wc.wcBlocksRegistry.registerPaymentMethod;
             var createElement = window.wp.element.createElement;
+            
+            // Get settings from server side
+            var getPaymentMethodData = window.wc.wcSettings.getPaymentMethodData;
+            var settings = getPaymentMethodData('geo_credit', {});
+            var description = settings.description || "Use your available credit to pay.";
+            var label = settings.title || "Credit Payment";
 
             registerPaymentMethod({
                 name: "geo_credit",
-                label: "Credit Payment",
+                label: label,
                 ariaLabel: "Pay using Go Geothermal credit balance", // Fix added here
-                content: createElement("div", {}, "Use your available credit to pay."),
+                content: createElement("div", { className: 'wc-block-components-payment-method-description' }, description),
                 edit: createElement("div", {}, "Editing Geo Credit Payment"),
                 canMakePayment: () => {
                     console.log("🟢 [Geo Credit] Checking canMakePayment()... Returning true.");
