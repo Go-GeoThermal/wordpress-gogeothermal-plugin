@@ -399,9 +399,23 @@
                         
                         // Force page reload if prices were updated on server
                         if (response.data && response.data.updated) {
-                            console.log('🔄 [GGT] Prices updated on server. Forcing page reload to ensure correct display...');
-                            window.location.reload();
+                            // Check if we just reloaded for this purpose to prevent infinite loops
+                            if (sessionStorage.getItem('ggt_price_refresh_done') === 'true') {
+                                console.log('🛑 [GGT] Server reported update, but we just reloaded. Preventing loop.');
+                                sessionStorage.removeItem('ggt_price_refresh_done');
+                                
+                                // Fallback: Update visible prices immediately
+                                updateVisiblePrices(prices);
+                                $('body').trigger('update_checkout');
+                            } else {
+                                console.log('🔄 [GGT] Prices updated on server. Forcing page reload to ensure correct display...');
+                                sessionStorage.setItem('ggt_price_refresh_done', 'true');
+                                window.location.reload();
+                            }
                         } else {
+                            // Not updated, clear the flag
+                            sessionStorage.removeItem('ggt_price_refresh_done');
+                            
                             // Fallback: Update visible prices immediately if server didn't report an update
                             console.log('🔄 [GGT] Server reported no changes, but attempting client-side update...');
                             updateVisiblePrices(prices);
