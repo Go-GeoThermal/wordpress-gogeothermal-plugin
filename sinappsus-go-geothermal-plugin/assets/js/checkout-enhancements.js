@@ -65,7 +65,7 @@
         var dateFieldHtml = `
             <div id="ggt_delivery_date_field" class="form-row form-row-wide" style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; background: #f8f8f8;">
                 <h3>Desired Delivery Date</h3>
-                <p>Please select your preferred delivery date. Note: Deliveries are not available on weekends, UK public holidays, or within 2 business days from today.</p>
+                <p>Please select your preferred delivery date. Note: Deliveries are not available on weekends, UK public holidays, or within 1 business days from today.</p>
                 <label for="ggt_delivery_date">Select your desired delivery date <abbr class="required" title="required">*</abbr></label>
                 <input type="text" class="input-text" name="ggt_delivery_date" id="ggt_delivery_date" placeholder="Click to select a date" required readonly>
             </div>
@@ -206,10 +206,35 @@
     }
     
     function initDatepickerWithHolidays($dateField, ukHolidays) {
+        // Calculate next valid business day for minDate
+        let minDate = new Date();
+        // Reset time to midnight to avoid issues where current time > 00:00 makes the calculated date unavailable
+        minDate.setHours(0, 0, 0, 0);
+        
+        // Get min date offset from server, default to 1 day if not set
+        let daysToAdd = 1;
+        // if (typeof ggt_vars !== 'undefined' && ggt_vars.min_date_offset) {
+        //     daysToAdd = parseInt(ggt_vars.min_date_offset);
+        // }
+        
+        minDate.setDate(minDate.getDate() + daysToAdd);
+        
+        // Keep advancing if weekend or holiday
+        while (true) {
+            const day = minDate.getDay();
+            const dateString = $.datepicker.formatDate('yy-mm-dd', minDate);
+            
+            if (day === 0 || day === 6 || $.inArray(dateString, ukHolidays) !== -1) {
+                minDate.setDate(minDate.getDate() + 1);
+            } else {
+                break;
+            }
+        }
+
         $dateField.datepicker({
             dateFormat: 'yy-mm-dd',
-            minDate: '+2d',
-            maxDate: '+6m',
+            minDate: minDate,
+            maxDate: '+12m',
             beforeShowDay: function(date) {
                 // Check if it's a weekend
                 var day = date.getDay();
@@ -468,24 +493,34 @@
             const newTotal = tempDiv.text().trim();
             console.log('💰 [GGT] Extracted new total:', newTotal);
             
+            let elementsUpdated = false;
+            
             // Update subtotal and total elements
-            $('.wc-block-components-totals-item__value').each(function() {
+            $('.wc-block-components-totals-item__value, .cart-subtotal .woocommerce-Price-amount, .order-total .woocommerce-Price-amount').each(function() {
                 const currentText = $(this).text();
-                // Update if this looks like a total (contains £ and similar amount)
-                if (currentText.includes('£') && currentText.includes('73.42')) {
-                    $(this).text(newTotal);
+                // Update if this looks like a total (contains numbers)
+                if (currentText.match(/[0-9]/)) {
+                    $(this).html(serverData.cart_total);
                     console.log('✅ [GGT] Updated total from', currentText, 'to', newTotal);
+                    elementsUpdated = true;
                 }
             });
             
             // Also update any other total-related elements
             $('.wc-block-components-totals-footer-item__value, .order-total .amount').each(function() {
                 const currentText = $(this).text();
-                if (currentText.includes('£') && currentText.includes('73.42')) {
-                    $(this).text(newTotal);
+                if (currentText.match(/[0-9]/)) {
+                    $(this).html(serverData.cart_total);
                     console.log('✅ [GGT] Updated footer total from', currentText, 'to', newTotal);
+                    elementsUpdated = true;
                 }
             });
+            
+            // If we couldn't update any elements, force a reload as fallback
+            if (!elementsUpdated) {
+                console.log('⚠️ [GGT] Could not find total elements to update. Forcing page reload...');
+                location.reload();
+            }
         }
     }
     
