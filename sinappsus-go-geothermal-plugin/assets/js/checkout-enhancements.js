@@ -232,7 +232,7 @@
         }
 
         $dateField.datepicker({
-            dateFormat: 'yy-mm-dd',
+            dateFormat: 'dd-mm-yy',
             minDate: minDate,
             maxDate: '+12m',
             beforeShowDay: function(date) {
@@ -253,33 +253,37 @@
             onSelect: function(dateText) {
                 console.log('✅ [GGT] Delivery date selected:', dateText);
                 
+                // Convert UK format (dd-mm-yy) to ISO format (yyyy-mm-dd) for backend
+                var dateParts = dateText.split('-');
+                var isoDate = dateParts[2] + '-' + dateParts[1] + '-' + dateParts[0];
+                
                 // Store in multiple places to ensure it gets captured
-                // 1. Regular field value
+                // 1. Regular field value (keep as display format)
                 $(this).val(dateText).trigger('change');
                 
-                // 2. Hidden field for form submission
+                // 2. Hidden field for form submission (use ISO format)
                 if (!$('input[name="ggt_delivery_date_hidden"]').length) {
-                    $('form.checkout').append('<input type="hidden" name="ggt_delivery_date_hidden" value="' + dateText + '">');
+                    $('form.checkout').append('<input type="hidden" name="ggt_delivery_date_hidden" value="' + isoDate + '">');
                 } else {
-                    $('input[name="ggt_delivery_date_hidden"]').val(dateText);
+                    $('input[name="ggt_delivery_date_hidden"]').val(isoDate);
                 }
                 
-                // 3. LocalStorage for persistent backup
+                // 3. LocalStorage for persistent backup (use ISO format for consistency)
                 try {
-                    localStorage.setItem('ggt_delivery_date', dateText);
+                    localStorage.setItem('ggt_delivery_date', isoDate);
                     console.log('✅ [GGT] Date saved to localStorage');
                 } catch (e) {
                     console.log('⚠️ [GGT] Could not save to localStorage:', e);
                 }
                 
-                // 4. Send via AJAX to store in session
+                // 4. Send via AJAX to store in session (use ISO format)
                 $.ajax({
                     url: ggt_checkout_data.ajax_url,
                     type: 'POST',
                     data: {
                         action: 'ggt_store_delivery_date',
                         nonce: ggt_checkout_data.nonce,
-                        delivery_date: dateText
+                        delivery_date: isoDate
                     },
                     success: function() {
                         console.log('✅ [GGT] Date saved to server session');

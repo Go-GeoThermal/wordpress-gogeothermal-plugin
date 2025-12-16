@@ -21,7 +21,7 @@
                 }
                 
                 // Convert UK format to ISO format for backend
-                const dateParts = deliveryDate.split('/');
+                const dateParts = deliveryDate.split('-');
                 const isoDate = dateParts[2] + '-' + dateParts[1].padStart(2, '0') + '-' + dateParts[0].padStart(2, '0');
                 
                 // Add hidden field as backup
@@ -128,7 +128,7 @@
         }
 
         $('#ggt_delivery_date').datepicker({
-            dateFormat: 'dd/mm/yy', // UK date format
+            dateFormat: 'dd-mm-yy', // UK date format
             minDate: minDate,
             maxDate: '+12m',
             beforeShowDay: function(date) {
@@ -150,7 +150,7 @@
                 $(this).trigger('change');
                 
                 // Convert UK format to ISO format for backend storage
-                const dateParts = dateText.split('/');
+                const dateParts = dateText.split('-');
                 const isoDate = dateParts[2] + '-' + dateParts[1].padStart(2, '0') + '-' + dateParts[0].padStart(2, '0');
                 
                 // Update hidden field with ISO format

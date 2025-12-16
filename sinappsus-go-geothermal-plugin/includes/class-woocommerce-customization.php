@@ -581,7 +581,8 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         'payment_provider_title' => $payment_method_title,
         'delivery_date'        => $formatted_delivery_date,
         'delivery_address'     => $delivery_address,
-        'customer_note'        => $order->get_customer_note()
+        'customer_note'        => $order->get_customer_note(),
+        'carrNet'              => $order->get_shipping_total()
     ];
 
     // =============================
