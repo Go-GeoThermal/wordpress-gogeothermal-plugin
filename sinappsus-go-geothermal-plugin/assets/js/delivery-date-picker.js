@@ -109,9 +109,9 @@
         
         // Get min date offset from server, default to 1 day if not set
         let daysToAdd = 1;
-        if (typeof ggt_vars !== 'undefined' && ggt_vars.min_date_offset) {
-            daysToAdd = parseInt(ggt_vars.min_date_offset);
-        }
+        // if (typeof ggt_vars !== 'undefined' && ggt_vars.min_date_offset) {
+        //     daysToAdd = parseInt(ggt_vars.min_date_offset);
+        // }
         
         minDate.setDate(minDate.getDate() + daysToAdd);
         
