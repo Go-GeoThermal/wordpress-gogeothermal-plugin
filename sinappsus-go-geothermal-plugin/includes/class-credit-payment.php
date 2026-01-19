@@ -167,28 +167,34 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         $available_credit = floatval($credit_limit) - floatval($balance);
 
         if (!empty($credit_limit) && $available_credit >= floatval($order->get_total())) {
-            // Figure out which key to use for updating balance
-            $balance_key = 'Balance'; // Default
-            if (get_user_meta($user_id, 'Balance', true) !== '') {
-                $balance_key = 'Balance';
-            } else if (get_user_meta($user_id, 'balance', true) !== '') {
-                $balance_key = 'balance';
-            }
-
-            // Increase the balance by the order total
-            update_user_meta($user_id, $balance_key, floatval($balance) + floatval($order->get_total()));
-
-            // Send order details to external API
+            
+            // 1. Send order details to external API FIRST
             $response = $this->send_order_to_api($order, $delivery_date);
 
             if (is_wp_error($response)) {
-                wc_add_notice(__('Something went wrong. Please contact your account manager.', 'woocommerce'), 'error');
+                $error_msg = $response->get_error_message();
+                wc_get_logger()->error('GGT Credit Payment Transport Error: ' . $error_msg);
+                wc_add_notice(__('Communication failed with the order system. Please try again.', 'woocommerce'), 'error');
                 return array('result' => 'fail');
             }
 
             $response_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
 
-            if ($response_code == 200) {
+            // 2. Check for Success (200-299)
+            if ($response_code >= 200 && $response_code < 300) {
+                // Figure out which key to use for updating balance
+                $balance_key = 'Balance'; // Default
+                if (get_user_meta($user_id, 'Balance', true) !== '') {
+                    $balance_key = 'Balance';
+                } else if (get_user_meta($user_id, 'balance', true) !== '') {
+                    $balance_key = 'balance';
+                }
+
+                // Increase the balance by the order total
+                update_user_meta($user_id, $balance_key, floatval($balance) + floatval($order->get_total()));
+
                 // Mark order as completed
                 $order->payment_complete();
                 $order->update_status('completed', __('Paid using store credit.', 'woocommerce'));
@@ -201,10 +207,13 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
                     'result'   => 'success',
                     'redirect' => $this->get_return_url($order)
                 );
-            } elseif ($response_code == 401) {
+            } 
+            // 3. Handle Errors
+            elseif ($response_code == 401) {
+                // Handle Authorization Failure
+                $msg = __('Authorization failure.', 'woocommerce');
+                
                 // Check for specific "User is not approved" message
-                $body = wp_remote_retrieve_body($response);
-                $data = json_decode($body, true);
                 if (isset($data['message']) && strpos($data['message'], 'User is not approved') !== false) {
                     // Handle the specific error: flag order, notify admin
                     if (function_exists('ggt_handle_account_not_found_error')) {
@@ -219,12 +228,47 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
                         'result'   => 'success',
                         'redirect' => $this->get_return_url($order)
                     );
-                } else {
-                    wc_add_notice(__('Something went wrong. Please contact your account manager.', 'woocommerce'), 'error');
-                    return array('result' => 'fail');
+                } 
+                
+                if(isset($data['message'])) {
+                     $msg .= ' ' . $data['message'];
                 }
+                
+                wc_add_notice($msg, 'error');
+                return array('result' => 'fail');
             } else {
-                wc_add_notice(__('Something went wrong. Please contact your account manager.', 'woocommerce'), 'error');
+                // 4. Handle Validation (422) or Server Error (500)
+                $error_msg = __('Unable to process order.', 'woocommerce');
+                
+                // Parse standard Laravel "errors" object: { "field": ["error1", "error2"] }
+                // Or the specific structure provided: {"errors":{"Illuminate\\Support\\MessageBag":{"items":["The items field is required."]}}}
+                
+                if (!empty($data['errors'])) {
+                    $details = [];
+                    
+                    // Recursive function to flatten error array
+                    $flatten_errors = function($array) use (&$flatten_errors) {
+                        $flat = [];
+                        foreach ($array as $key => $value) {
+                            if (is_array($value)) {
+                                $flat = array_merge($flat, $flatten_errors($value));
+                            } else {
+                                $flat[] = $value;
+                            }
+                        }
+                        return $flat;
+                    };
+
+                    $flat_errors = $flatten_errors($data['errors']);
+                    if (!empty($flat_errors)) {
+                         $error_msg .= ' Details: ' . implode(' ', $flat_errors);
+                    }
+                } elseif (!empty($data['message'])) {
+                    $error_msg .= ' ' . $data['message'];
+                }
+
+                wc_get_logger()->error('GGT Credit Payment Rejected (Code '.$response_code.'): ' . $error_msg);
+                wc_add_notice($error_msg, 'error');
                 return array('result' => 'fail');
             }
         } else {
