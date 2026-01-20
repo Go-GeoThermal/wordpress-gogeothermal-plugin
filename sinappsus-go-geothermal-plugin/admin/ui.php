@@ -2134,6 +2134,13 @@ add_action('user_register', 'save_custom_registration_fields');
 
 function save_custom_registration_fields($user_id)
 {
+    // Prevent duplicate execution for the same user in a single request
+    static $processed_users = [];
+    if (in_array($user_id, $processed_users)) {
+        return;
+    }
+    $processed_users[] = $user_id;
+
     if (!get_option('ggt_plugin_enabled', 1)) return;
     $catalog = function_exists('ggt_get_registration_fields_catalog') ? ggt_get_registration_fields_catalog() : [];
     $enabled = get_option('ggt_user_field_mapping_enabled', []);
@@ -2248,7 +2255,7 @@ function store_environment()
 
 // WooCommerce Registration Form Integration - reuse existing functions
 add_action('woocommerce_register_form', 'add_custom_registration_fields');
-add_action('woocommerce_created_customer', 'save_custom_registration_fields');
+// add_action('woocommerce_created_customer', 'save_custom_registration_fields'); // Removed to prevent duplicate API calls (already handled by user_register)
 
 // Helper function to find or create product category
 function find_or_create_product_category($category_name) {
