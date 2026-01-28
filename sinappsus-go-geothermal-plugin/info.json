@@ -1,7 +1,7 @@
 {
     "name" : "Sinappsus GoGeothermal Official Plugin",
     "slug" : "sinappsus-go-geothermal-plugin",
-    "version" : "0.3.1",
+    "version" : "0.3.2",
     "author"  : "Sinappsus",
     "author_uri" : "https://sinappsus.agency",
     "download_url" : "https://github.com/Go-GeoThermal/wordpress-gogeothermal-plugin/raw/master/sinappsus-go-geothermal-plugin.zip",
