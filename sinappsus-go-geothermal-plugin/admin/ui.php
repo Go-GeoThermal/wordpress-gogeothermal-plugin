@@ -2012,6 +2012,14 @@ function ggt_core_update_product($product_id, $product_data) {
 
 function sync_user()
 {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized', 401);
+    }
+    if (!get_option('ggt_plugin_enabled', 1)) {
+        wp_send_json_error('Plugin is disabled', 403);
+    }
+
+    $user_data = $_POST['user_data'];
     $result = ggt_core_sync_user($user_data);
 
     if (is_wp_error($result)) {
@@ -2046,15 +2054,7 @@ function ggt_core_sync_user($user_data) {
             }
         }
     }
-    return true
-            foreach ($mapped as $targetKey => $val) {
-                update_user_meta($user_id, $targetKey, $val);
-            }
-        }
-    }
-
-
-    wp_send_json_success();
+    return true;
 }
 
 function delete_all_users()
