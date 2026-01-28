@@ -135,6 +135,13 @@ class Sinappsus_GGT_Admin_UI
 
             <div id="ggt-tab-auth" class="ggt-tab-panel" style="display:none;">
                 <h2>Authentication</h2>
+                <?php 
+                    $env_display = ($selected_env === 'staging') ? 'STAGING' : 'PRODUCTION';
+                    $env_style = ($selected_env === 'staging') ? 'background-color: #ffba00; color: #fff;' : 'background-color: #d63638; color: #fff;';
+                ?>
+                <div style="padding: 15px; margin-bottom: 20px; border-radius: 4px; text-align: center; border: 1px solid #ccc; <?php echo $env_style; ?>">
+                    <h3 style="margin: 0; color: inherit;">You are currently connected to: <?php echo $env_display; ?></h3>
+                </div>
                 <p><?php echo $token_exists ? '<span style="color:green;">Token present</span>' : '<span style="color:#cc0000;">Not authenticated</span>'; ?></p>
                 <form method="post" action="options.php">
                     <?php settings_fields('ggt_sinappsus_auth_group'); ?>
@@ -622,7 +629,9 @@ class Sinappsus_GGT_Admin_UI
                                                 document.getElementById('message').innerText = 'Authentication successful! Reloading...';
                                                 // Reload page to refresh PHP token state and jump to products tab
                                                 window.location.hash = '#products';
-                                                window.location.reload();
+                                                setTimeout(function() {
+                                                    window.location.reload();
+                                                }, 500);
                                             } else {
                                                 document.getElementById('message').innerText = 'Failed to store token!';
                                             }

@@ -577,19 +577,10 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
         $carrNet = $shipping_total;
     }
 
-    // Calculate total fees
-    $fees_total = 0;
-    foreach ($order->get_fees() as $fee) {
-        $fees_total += floatval($fee->get_total());
-    }
-
     $order_data = [
         'woocommerce_order_id' => $order->get_id(),
         'user_id'              => $user_id,
         'total'                => $order->get_total(),
-        'subtotal'             => $order->get_subtotal(),
-        'vat'                  => $order->get_total_tax(),
-        'fees'                 => $fees_total,
         'currency'             => get_woocommerce_currency(),
         'billing'              => $order->get_address('billing'),
         'shipping'             => $order->get_address('shipping'),
@@ -725,7 +716,6 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
 // }
 
 function ggt_update_order_status_in_api($order, $status) {
-    return true; // Temporarily disabled to reduce API calls
     $api_key = ggt_get_decrypted_token();
     $api_base_url = ggt_get_api_base_url();
     $endpoint = $api_base_url . '/sales-orders/wp-update-order-status';

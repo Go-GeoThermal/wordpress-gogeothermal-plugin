@@ -378,31 +378,10 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             }
         }
         
-        // Calculate shipping gross total (Net + Tax)
-        $carrNet = floatval($order->get_shipping_total()) + floatval($order->get_shipping_tax());
-
-        if (empty($carrNet) || floatval($carrNet) == 0) {
-            $shipping_total = 0;
-            foreach ($order->get_shipping_methods() as $shipping_item) {
-                $shipping_total += floatval($shipping_item->get_total()) + floatval($shipping_item->get_total_tax());
-            }
-            $carrNet = $shipping_total;
-        }
-
-        // Calculate total fees
-        $fees_total = 0;
-        foreach ($order->get_fees() as $fee) {
-            $fees_total += floatval($fee->get_total());
-        }
-
         $order_data = array(
             'woocommerce_order_id' => $order->get_id(),
             'user_id'        => $user_id,
             'total'          => $order->get_total(),
-            'subtotal'       => $order->get_subtotal(),
-            'vat'            => $order->get_total_tax(),
-            'fees'           => $fees_total,
-            'carrNet'        => $carrNet,
             'currency'       => get_woocommerce_currency(),
             'billing'        => $order->get_address('billing'),
             'shipping'       => $order->get_address('shipping'),
