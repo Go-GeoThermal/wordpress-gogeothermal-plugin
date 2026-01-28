@@ -139,7 +139,12 @@ function ggt_get_api_base_url() {
         return $environments[$selected_env]['api_url'];
     }
     
-    // Default to production if environment not found
+    // Fallback to constant if available, otherwise production
+    if (defined('GGT_SINAPPSUS_API_URL')) {
+        return GGT_SINAPPSUS_API_URL;
+    }
+
+    // Default to production if environment not found and constant not defined
     return "https://api.gogeothermal.uk/api";
 }
 
