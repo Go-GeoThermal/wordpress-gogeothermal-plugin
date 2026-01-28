@@ -432,6 +432,31 @@ class Sinappsus_GGT_Admin_UI
                         </tr>
                     </table>
 
+                    <!-- Automated Schedules -->
+                    <h3>Automated Schedules</h3>
+                    <table class="form-table">
+                        <tr valign="top">
+                            <th scope="row">Auto-Sync Products</th>
+                            <td>
+                                <label for="ggt_auto_sync_products">
+                                    <input type="checkbox" id="ggt_auto_sync_products" name="ggt_auto_sync_products" value="1" <?php checked(1, get_option('ggt_auto_sync_products'), true); ?> />
+                                    Automatically sync products daily (midnight)
+                                </label>
+                                <p class="description">Requires Product Field Mapping to be configured.</p>
+                            </td>
+                        </tr>
+                        <tr valign="top">
+                            <th scope="row">Auto-Sync Users</th>
+                            <td>
+                                <label for="ggt_auto_sync_users">
+                                    <input type="checkbox" id="ggt_auto_sync_users" name="ggt_auto_sync_users" value="1" <?php checked(1, get_option('ggt_auto_sync_users'), true); ?> />
+                                    Automatically sync users daily (midnight)
+                                </label>
+                                <p class="description">Requires User Field Mapping to be configured.</p>
+                            </td>
+                        </tr>
+                    </table>
+
                     <?php submit_button('Save Settings'); ?>
                 </form>
             </div>
@@ -594,10 +619,10 @@ class Sinappsus_GGT_Admin_UI
                                             token: data.access_token
                                         }, function(response) {
                                             if (response.success) {
-                                                document.getElementById('message').innerText = 'Authentication successful!';
-                                                // Switch to Products tab after authentication
-                                                const tab = document.querySelector('#ggt-tabs-nav a[href="#products"]');
-                                                if (tab) tab.click();
+                                                document.getElementById('message').innerText = 'Authentication successful! Reloading...';
+                                                // Reload page to refresh PHP token state and jump to products tab
+                                                window.location.hash = '#products';
+                                                window.location.reload();
                                             } else {
                                                 document.getElementById('message').innerText = 'Failed to store token!';
                                             }
@@ -1479,83 +1504,123 @@ class Sinappsus_GGT_Admin_UI
                         return;
                     }
                     
-                    document.getElementById('analysis-results').innerHTML = '<p>Importing products... This may take a few minutes.</p>';
-                    this.disabled = true;
+                    const btn = this;
+                    btn.disabled = true;
+                    document.getElementById('analysis-results').innerHTML = '<p>Importing products... <span id="import-progress-text">Starting...</span></p>';
                     
-                    jQuery.post(ajaxurl, {
-                        action: 'ggt_execute_flexible_import'
-                    }).done(function(response) {
-                        if (response.success) {
-                            // Main import complete, now process related products
-                            document.getElementById('analysis-results').innerHTML = '<p>Processing related products...</p>';
-                            
-                            jQuery.post(ajaxurl, {
-                                action: 'ggt_process_related_products'
-                            }).done(function(relatedRes) {
-                                document.getElementById('step-analysis').style.display = 'none';
-                                document.getElementById('step-results').style.display = 'block';
-                                
-                                let html = '<div style="border:1px solid #4caf50; padding:15px; background:#e8f5e9;">';
-                                html += '<h4 style="color:#4caf50;">✓ Import Complete!</h4>';
-                                html += '<p><strong>Created:</strong> ' + response.data.created + '</p>';
-                                html += '<p><strong>Updated:</strong> ' + response.data.updated + '</p>';
-                                html += '<p><strong>Skipped:</strong> ' + response.data.skipped + '</p>';
-                                
-                                if (relatedRes.success && relatedRes.data) {
-                                    html += '<p><strong>Related Products Processed:</strong> ' + relatedRes.data.processed + '</p>';
-                                    html += '<p><strong>Related Products Updated:</strong> ' + relatedRes.data.updated + '</p>';
-                                    
-                                    if (relatedRes.data.errors && relatedRes.data.errors.length > 0) {
-                                        html += '<div style="background:#fff3cd; border:1px solid #ffc107; padding:10px; margin-top:10px;">';
-                                        html += '<strong>Related Products Warnings:</strong><ul>';
-                                        relatedRes.data.errors.slice(0, 5).forEach(error => {
-                                            html += '<li>' + error + '</li>';
-                                        });
-                                        if (relatedRes.data.errors.length > 5) {
-                                            html += '<li>... and ' + (relatedRes.data.errors.length - 5) + ' more warnings</li>';
-                                        }
-                                        html += '</ul></div>';
-                                    }
+                    let page = 1;
+                    // Batch size: lower reduces memory usage per request
+                    const limit = 50; 
+                    
+                    let totals = {
+                        created: 0,
+                        updated: 0,
+                        skipped: 0,
+                        errors: []
+                    };
+
+                    function runImportBatch() {
+                        document.getElementById('import-progress-text').innerText = 'Processing page ' + page + '...';
+                        
+                        jQuery.post(ajaxurl, {
+                            action: 'ggt_execute_flexible_import',
+                            page: page,
+                            limit: limit
+                        }).done(function(response) {
+                            if (response.success) {
+                                totals.created += (response.data.created || 0);
+                                totals.updated += (response.data.updated || 0);
+                                totals.skipped += (response.data.skipped || 0);
+                                if (response.data.errors && Array.isArray(response.data.errors)) {
+                                    totals.errors = totals.errors.concat(response.data.errors);
                                 }
+
+                                if (response.data.has_more) {
+                                    page++;
+                                    // Small delay to prevent browser freeze
+                                    setTimeout(runImportBatch, 100);
+                                } else {
+                                    finishImport();
+                                }
+                            } else {
+                                showError('Import failed during page ' + page + ': ' + (response.data || 'Unknown error'));
+                            }
+                        }).fail(function() {
+                            showError('Request failed during page ' + page + '. Please check server logs.');
+                        });
+                    }
+
+                    function showError(msg) {
+                        document.getElementById('step-analysis').style.display = 'none';
+                        document.getElementById('step-results').style.display = 'block';
+                        document.getElementById('import-results').innerHTML = '<p style="color:red;">' + msg + '</p>';
+                    }
+
+                    function finishImport() {
+                        // Main import complete, now process related products
+                        document.getElementById('analysis-results').innerHTML = '<p>Processing related products...</p>';
+                        
+                        jQuery.post(ajaxurl, {
+                            action: 'ggt_process_related_products'
+                        }).done(function(relatedRes) {
+                            document.getElementById('step-analysis').style.display = 'none';
+                            document.getElementById('step-results').style.display = 'block';
+                            
+                            let html = '<div style="border:1px solid #4caf50; padding:15px; background:#e8f5e9;">';
+                            html += '<h4 style="color:#4caf50;">✓ Import Complete!</h4>';
+                            html += '<p><strong>Created:</strong> ' + totals.created + '</p>';
+                            html += '<p><strong>Updated:</strong> ' + totals.updated + '</p>';
+                            html += '<p><strong>Skipped:</strong> ' + totals.skipped + '</p>';
+                            
+                            if (relatedRes.success && relatedRes.data) {
+                                html += '<p><strong>Related Products Processed:</strong> ' + relatedRes.data.processed + '</p>';
+                                html += '<p><strong>Related Products Updated:</strong> ' + relatedRes.data.updated + '</p>';
                                 
-                                if (response.data.errors.length > 0) {
+                                if (relatedRes.data.errors && relatedRes.data.errors.length > 0) {
                                     html += '<div style="background:#fff3cd; border:1px solid #ffc107; padding:10px; margin-top:10px;">';
-                                    html += '<strong>Import Errors:</strong><ul>';
-                                    response.data.errors.slice(0, 10).forEach(error => {
+                                    html += '<strong>Related Products Warnings:</strong><ul>';
+                                    relatedRes.data.errors.slice(0, 5).forEach(error => {
                                         html += '<li>' + error + '</li>';
                                     });
-                                    if (response.data.errors.length > 10) {
-                                        html += '<li>... and ' + (response.data.errors.length - 10) + ' more errors</li>';
+                                    if (relatedRes.data.errors.length > 5) {
+                                        html += '<li>... and ' + (relatedRes.data.errors.length - 5) + ' more warnings</li>';
                                     }
                                     html += '</ul></div>';
                                 }
-                                
-                                html += '</div>';
-                                document.getElementById('import-results').innerHTML = html;
-                            }).fail(function() {
-                                // Show main import results even if related products processing fails
-                                document.getElementById('step-analysis').style.display = 'none';
-                                document.getElementById('step-results').style.display = 'block';
-                                
-                                let html = '<div style="border:1px solid #4caf50; padding:15px; background:#e8f5e9;">';
-                                html += '<h4 style="color:#4caf50;">✓ Import Complete!</h4>';
-                                html += '<p><strong>Created:</strong> ' + response.data.created + '</p>';
-                                html += '<p><strong>Updated:</strong> ' + response.data.updated + '</p>';
-                                html += '<p><strong>Skipped:</strong> ' + response.data.skipped + '</p>';
-                                html += '<p style="color:orange;"><strong>Warning:</strong> Related products processing failed</p>';
-                                html += '</div>';
-                                document.getElementById('import-results').innerHTML = html;
-                            });
-                        } else {
+                            }
+                            
+                            if (totals.errors.length > 0) {
+                                html += '<div style="background:#fff3cd; border:1px solid #ffc107; padding:10px; margin-top:10px;">';
+                                html += '<strong>Import Errors:</strong><ul>';
+                                totals.errors.slice(0, 10).forEach(error => {
+                                    html += '<li>' + error + '</li>';
+                                });
+                                if (totals.errors.length > 10) {
+                                    html += '<li>... and ' + (totals.errors.length - 10) + ' more errors</li>';
+                                }
+                                html += '</ul></div>';
+                            }
+                            
+                            html += '</div>';
+                            document.getElementById('import-results').innerHTML = html;
+                        }).fail(function() {
+                            // Show main import results even if related products processing fails
                             document.getElementById('step-analysis').style.display = 'none';
                             document.getElementById('step-results').style.display = 'block';
-                            document.getElementById('import-results').innerHTML = '<p style="color:red;">Import failed: ' + (response.data || 'Unknown error') + '</p>';
-                        }
-                    }).fail(function() {
-                        document.getElementById('step-analysis').style.display = 'none';
-                        document.getElementById('step-results').style.display = 'block';
-                        document.getElementById('import-results').innerHTML = '<p style="color:red;">Import request failed</p>';
-                    });
+                            
+                            let html = '<div style="border:1px solid #4caf50; padding:15px; background:#e8f5e9;">';
+                            html += '<h4 style="color:#4caf50;">✓ Import Complete!</h4>';
+                            html += '<p><strong>Created:</strong> ' + totals.created + '</p>';
+                            html += '<p><strong>Updated:</strong> ' + totals.updated + '</p>';
+                            html += '<p><strong>Skipped:</strong> ' + totals.skipped + '</p>';
+                            html += '<p style="color:orange;"><strong>Warning:</strong> Related products processing failed</p>';
+                            html += '</div>';
+                            document.getElementById('import-results').innerHTML = html;
+                        });
+                    }
+
+                    // Start the first batch
+                    runImportBatch();
                 });
 
                 document.getElementById('close-results').addEventListener('click', function() {
@@ -1650,6 +1715,8 @@ function ggt_sinappsus_register_settings()
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_acf_related_field');
     register_setting('ggt_sinappsus_settings_group', 'ggt_replace_existing_image');
     register_setting('ggt_sinappsus_settings_group', 'ggt_account_not_found_email');
+    register_setting('ggt_sinappsus_settings_group', 'ggt_auto_sync_products');
+    register_setting('ggt_sinappsus_settings_group', 'ggt_auto_sync_users');
 
     // Dashboard tab
     register_setting('ggt_sinappsus_dashboard_group', 'ggt_plugin_enabled');
@@ -1774,6 +1841,11 @@ function get_all_products()
         wp_send_json_error('Unauthorized', 401);
     }
 
+    $result = ggt_core_get_all_products();
+    wp_send_json_success($result);
+}
+
+function ggt_core_get_all_products() {
     $args = array(
         'post_type' => 'product',
         'posts_per_page' => -1,
@@ -1794,8 +1866,7 @@ function get_all_products()
             'sku' => $sku
         );
     }
-
-    wp_send_json_success($result);
+    return $result;
 }
 
 function create_product()
@@ -1808,7 +1879,16 @@ function create_product()
     }
 
     $product_data = $_POST['product_data'];
+    $result = ggt_core_create_product($product_data);
 
+    if (is_wp_error($result)) {
+        wp_send_json_error($result->get_error_message());
+    }
+    
+    wp_send_json_success();
+}
+
+function ggt_core_create_product($product_data) {
     $product = new WC_Product();
     $product->set_name($product_data['description']);
     $product->set_regular_price($product_data['salesPrice']);
@@ -1855,8 +1935,8 @@ function create_product()
     if (!empty($product_data['image_path'])) {
         set_product_featured_image_from_url($product->get_id(), $product_data['image_path']);
     }
-    
-    wp_send_json_success();
+
+    return $product->get_id();
 }
 
 function update_product()
@@ -1871,6 +1951,14 @@ function update_product()
     $product_id = intval($_POST['product_id']);
     $product_data = $_POST['product_data'];
 
+    $result = ggt_core_update_product($product_id, $product_data);
+    if (is_wp_error($result)) {
+        wp_send_json_error($result->get_error_message(), 404);
+    }
+    wp_send_json_success();
+}
+
+function ggt_core_update_product($product_id, $product_data) {
     $product = wc_get_product($product_id);
     if ($product) {
         $product->set_name($product_data['description']);
@@ -1902,8 +1990,8 @@ function update_product()
 
         $product->save();
         
-    // Optionally relate products via ACF after product is saved
-    relate_products_via_acf($product->get_id(), $product_data);
+        // Optionally relate products via ACF after product is saved
+        relate_products_via_acf($product->get_id(), $product_data);
         
         // Set featured image after product is saved (respect replace setting)
         if (!empty($product_data['image_path'])) {
@@ -1916,25 +2004,26 @@ function update_product()
             }
         }
         
-        wp_send_json_success();
+        return true;
     } else {
-        wp_send_json_error('Product not found', 404);
+        return new WP_Error('not_found', 'Product not found');
     }
 }
 
 function sync_user()
 {
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error('Unauthorized', 401);
-    }
-    if (!get_option('ggt_plugin_enabled', 1)) {
-        wp_send_json_error('Plugin is disabled', 403);
+    $result = ggt_core_sync_user($user_data);
+
+    if (is_wp_error($result)) {
+        wp_send_json_error($result->get_error_message());
     }
 
-    $user_data = $_POST['user_data'];
+    wp_send_json_success();
+}
 
+function ggt_core_sync_user($user_data) {
     if (!isset($user_data['email'])) {
-        wp_send_json_error('User email is required.');
+        return new WP_Error('missing_email', 'User email is required.');
     }
 
     $user_id = username_exists($user_data['email']);
@@ -1943,7 +2032,7 @@ function sync_user()
     }
 
     if (is_wp_error($user_id)) {
-        wp_send_json_error('Failed to create user: ' . $user_data['email']);
+        return new WP_Error('create_failed', 'Failed to create user: ' . $user_data['email']);
     }
 
     // Apply mapping to user data (map-only semantics) and persist via helper
@@ -1952,6 +2041,12 @@ function sync_user()
         if (function_exists('ggt_update_user_targets')) {
             ggt_update_user_targets($user_id, $mapped);
         } else {
+            foreach ($mapped as $targetKey => $val) {
+                update_user_meta($user_id, $targetKey, $val);
+            }
+        }
+    }
+    return true
             foreach ($mapped as $targetKey => $val) {
                 update_user_meta($user_id, $targetKey, $val);
             }

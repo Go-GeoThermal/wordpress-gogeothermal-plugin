@@ -471,10 +471,14 @@ function ggt_execute_flexible_import() {
         wp_send_json_error('Plugin is disabled', 403);
     }
 
-    // Lift resource limits for the full import
+    // Lift resource limits
     $http_timeout = ggt_raise_import_limits('execute');
 
-    // Track progress and add a shutdown handler to return a helpful error if PHP fatals
+    // Get pagination parameters
+    $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
+    $limit = isset($_POST['limit']) ? intval($_POST['limit']) : 50;
+
+    // Track progress
     $import_started_at = microtime(true);
     $progress = (object) [
         'processed' => 0,
@@ -482,10 +486,9 @@ function ggt_execute_flexible_import() {
         'created' => 0,
         'skipped' => 0
     ];
-    // Will be updated as we go; used for last message if we crash
     $last_step = 'initializing';
 
-    // Shutdown handler for fatal errors (memory/time). Emits a JSON error if possible.
+    // Shutdown handler
     register_shutdown_function(function () use ($import_started_at, &$progress, &$last_step) {
         $err = error_get_last();
         if (!$err) return;
@@ -495,7 +498,6 @@ function ggt_execute_flexible_import() {
         $duration = round((microtime(true) - $import_started_at) * 1000);
         $peak_mem_mb = round(memory_get_peak_usage(true) / 1048576, 2);
 
-        // Heuristics to classify the cause
         $message = isset($err['message']) ? (string) $err['message'] : '';
         $cause = 'Server resource limit or fatal error';
         if (stripos($message, 'Allowed memory size') !== false) {
@@ -504,25 +506,19 @@ function ggt_execute_flexible_import() {
             $cause = 'Execution time limit exceeded';
         }
 
-        // Try to send JSON if headers aren't sent yet
         if (!headers_sent()) {
             status_header(500);
             header('Content-Type: application/json; charset=utf-8');
             echo wp_json_encode([
                 'success' => false,
                 'message' => 'Import failed: ' . $cause . '.',
-                'hint' => 'We raised time and memory limits for this request. If this persists, try smaller batches or raise the server limits.',
                 'meta' => [
                     'processed' => $progress->processed,
-                    'updated' => $progress->updated,
-                    'created' => $progress->created,
-                    'skipped' => $progress->skipped,
                     'last_step' => $last_step,
                     'duration_ms' => $duration,
                     'peak_memory_mb' => $peak_mem_mb,
                 ]
             ]);
-            // Ensure we stop here
             die();
         }
     });
@@ -533,7 +529,6 @@ function ggt_execute_flexible_import() {
     }
 
     $mapping = get_option('ggt_product_field_mapping', array());
-    
     if (empty($mapping)) {
         wp_send_json_error('No field mapping configured');
     }
@@ -542,9 +537,16 @@ function ggt_execute_flexible_import() {
     $selected_env = get_option('ggt_sinappsus_environment', 'production');
     $api_url = $environments[$selected_env]['api_url'];
 
-    // Fetch all products
-    $last_step = 'fetching products from API';
-    $response = wp_remote_get($api_url . '/products', array(
+    // Fetch batch of products
+    $last_step = "fetching products page $page";
+    // Append limit and page to URL
+    // Note: The API Controller now supports ?limit=X&page=Y
+    $fetch_url = add_query_arg([
+        'limit' => $limit,
+        'page' => $page
+    ], $api_url . '/products');
+
+    $response = wp_remote_get($fetch_url, array(
         'headers' => array(
             'Authorization' => 'Bearer ' . $token,
             'Content-Type' => 'application/json'
@@ -560,28 +562,102 @@ function ggt_execute_flexible_import() {
     $products = json_decode($body, true);
 
     if (!is_array($products)) {
+        // If API returns non-array (e.g. error obj), handle it
         wp_send_json_error('Invalid response from API');
     }
 
-    // Get all existing products
-    $existing_products = array();
-    $args = array(
-        'post_type' => 'product',
-        'posts_per_page' => -1,
-        'post_status' => 'any',
-        'fields' => 'ids'
-    );
-    $existing_ids = get_posts($args);
-    
-    foreach ($existing_ids as $id) {
-        $product = wc_get_product($id);
-        if ($product) {
-            $stock_code = $product->get_meta('_stockCode');
-            $sku = $product->get_sku();
-            if ($stock_code) {
-                $existing_products[$stock_code] = $id;
-            } elseif ($sku) {
-                $existing_products[$sku] = $id;
+    // If empty, we are done
+    if (empty($products)) {
+         wp_send_json_success(array(
+            'updated' => 0,
+            'created' => 0,
+            'skipped' => 0,
+            'errors' => [],
+            'has_more' => false,
+            'next_page' => null,
+            'message' => 'No more products to import.'
+        ));
+    }
+
+    // Collect identification keys to query existing products efficiently
+    $stock_codes_to_check = [];
+    $skus_to_check = [];
+
+    foreach ($products as $p) {
+        // We look for mapped _stockCode in the API data
+        // Reverse map: find which API field maps to _stockCode
+        $stock_code_val = null;
+        foreach ($mapping as $api_f => $wc_f) {
+            if ($wc_f === '_stockCode' && isset($p[$api_f])) {
+                $stock_code_val = $p[$api_f];
+                break;
+            }
+        }
+        if ($stock_code_val) {
+            $stock_codes_to_check[] = $stock_code_val;
+        }
+
+        // Also check SKU
+        $sku_val = null;
+        foreach ($mapping as $api_f => $wc_f) {
+            if ($wc_f === 'sku' && isset($p[$api_f])) {
+                $sku_val = $p[$api_f];
+                break;
+            }
+        }
+        if ($sku_val) {
+            $skus_to_check[] = $sku_val;
+        }
+    }
+
+    $existing_products = array(); // Map stockCode/SKU -> ID
+
+    if (!empty($stock_codes_to_check) || !empty($skus_to_check)) {
+        $meta_query = ['relation' => 'OR'];
+        if (!empty($stock_codes_to_check)) {
+            $meta_query[] = [
+                'key' => '_stockCode',
+                'value' => $stock_codes_to_check,
+                'compare' => 'IN'
+            ];
+        }
+        if (!empty($skus_to_check)) {
+            $meta_query[] = [
+                'key' => '_sku',
+                'value' => $skus_to_check,
+                'compare' => 'IN'
+            ];
+        }
+
+        // Optimization: Use direct SQL for massive speedup over WP_Query loop
+        global $wpdb;
+        // Search by meta _stockCode
+        if (!empty($stock_codes_to_check)) {
+            $escaped_codes = implode("','", array_map('esc_sql', $stock_codes_to_check));
+            $found = $wpdb->get_results("
+                SELECT post_id, meta_value 
+                FROM {$wpdb->postmeta} 
+                WHERE meta_key = '_stockCode' 
+                AND meta_value IN ('$escaped_codes')
+            ");
+            foreach ($found as $row) {
+                $existing_products[$row->meta_value] = intval($row->post_id);
+            }
+        }
+        // Search by SKU (stored in _sku meta)
+        if (!empty($skus_to_check)) {
+            $escaped_skus = implode("','", array_map('esc_sql', $skus_to_check));
+            $found = $wpdb->get_results("
+                SELECT post_id, meta_value 
+                FROM {$wpdb->postmeta} 
+                WHERE meta_key = '_sku' 
+                AND meta_value IN ('$escaped_skus')
+            ");
+            foreach ($found as $row) {
+                // Prefer stockCode over SKU if collision, but here we just add to map
+                if (!isset($existing_products[$row->meta_value])) {
+                    $existing_products[$row->meta_value] = intval($row->post_id);
+                }
             }
         }
     }
@@ -599,30 +675,43 @@ function ggt_execute_flexible_import() {
             
             // Get stock code
             $stock_code = isset($mapped_data['_stockCode']) ? $mapped_data['_stockCode'] : null;
+            $sku = isset($mapped_data['sku']) ? $mapped_data['sku'] : null;
             
-            if (!$stock_code) {
+            if (!$stock_code && !$sku) {
+                // Must have at least one identifier
                 $skipped++;
                 $progress->skipped = $skipped;
                 $progress->processed++;
                 continue;
             }
 
-            // Check if product exists
-            $product_id = isset($existing_products[$stock_code]) ? $existing_products[$stock_code] : null;
+            // Check if product exists (check stockCode then SKU)
+            $product_id = null;
+            if ($stock_code && isset($existing_products[$stock_code])) {
+                $product_id = $existing_products[$stock_code];
+            } elseif ($sku && isset($existing_products[$sku])) {
+                $product_id = $existing_products[$sku];
+            }
             
             if ($product_id) {
-                // Update existing (pass original product_data for ACF relationships)
+                // Update existing
                 ggt_update_product_with_mapping_and_acf($product_id, $product_data, $mapped_data);
                 $updated++;
                 $progress->updated = $updated;
             } else {
-                // Create new (if not inactive)
-                if (empty($mapped_data['inactiveFlag']) || ($mapped_data['inactiveFlag'] !== true && $mapped_data['inactiveFlag'] !== "1")) {
-                    // Pass original product_data for ACF relationships
+                // Create new
+                // Check if inactive
+                $is_inactive = false;
+                if (!empty($mapped_data['inactiveFlag']) && ($mapped_data['inactiveFlag'] === true || $mapped_data['inactiveFlag'] === "1")) {
+                     $is_inactive = true;
+                }
+
+                if (!$is_inactive && $stock_code) { // Only create if we have a stock code? Or SKU? Original code checked inactive
+                     // Pass original product_data for ACF relationships
                     $new_id = ggt_create_product_with_mapping_and_acf($product_data, $mapped_data);
                     if ($new_id) {
                         $created++;
-                        $existing_products[$stock_code] = $new_id;
+                        if ($stock_code) $existing_products[$stock_code] = $new_id;
                         $progress->created = $created;
                     }
                 } else {
@@ -637,9 +726,9 @@ function ggt_execute_flexible_import() {
         }
     }
 
-    // Persist last import summary for dashboard
+    // Persist last import summary for dashboard (accumulate if not first page? Or just timestamp)
     update_option('ggt_last_product_import', array(
-        'updated' => $updated,
+        'updated' => $updated, // Note: this is just for this batch. Dashboard might need total.
         'created' => $created,
         'skipped' => $skipped,
         'timestamp' => time(),
@@ -648,11 +737,16 @@ function ggt_execute_flexible_import() {
     $duration_ms = round((microtime(true) - $import_started_at) * 1000);
     $peak_memory_mb = round(memory_get_peak_usage(true) / 1048576, 2);
 
+    // Determine if has more
+    $has_more = count($products) >= $limit;
+
     wp_send_json_success(array(
         'updated' => $updated,
         'created' => $created,
         'skipped' => $skipped,
         'errors' => $errors,
+        'has_more' => $has_more,
+        'next_page' => $has_more ? $page + 1 : null,
         'meta' => array(
             'processed' => $progress->processed,
             'duration_ms' => $duration_ms,

@@ -4,7 +4,7 @@
  * Description: A custom WordPress plugin to integrate WooCommerce with The Go Geothermal API.
  * Plugin URI: https://gogeothermal.co.uk
  * Author URI: https://sinappsus.agency
- * Version: 0.2.14
+ * Version: 0.3.0
  * Author: Sinappsus
  * Requires at least: 5.0
  * Tested up to: 6.8
@@ -12,7 +12,7 @@
 
 defined('ABSPATH') || exit;
 
-define('GGT_SINAPPSUS_PLUGIN_VERSION', '0.2.14');
+define('GGT_SINAPPSUS_PLUGIN_VERSION', '0.3.0');
 define('GGT_SINAPPSUS_PLUGIN_URL', untrailingslashit(plugins_url(basename(plugin_dir_path(__FILE__)), basename(__FILE__))));
 define('GGT_SINAPPSUS_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('GGT_SINAPPSUS_API_URL', 'https://api.gogeothermal.uk/api');
@@ -27,11 +27,45 @@ $myUpdateChecker = PucFactory::buildUpdateChecker(
     'ena-sinappsus-plugin'
 );
 
+// Activation check logic
+function ggt_activation_check() {
+    if (!class_exists('WooCommerce')) {
+        deactivate_plugins(plugin_basename(__FILE__));
+        wp_die(__('This plugin requires WooCommerce to be installed and active.', 'sinappsus-ggt-wp-plugin'));
+    }
+}
+register_activation_hook(__FILE__, 'ggt_activation_check');
+
 // Check Plugin is activated or activate
 function ggt_sinappsus_plugin()
 {
+    // Runtime check
+    if (!class_exists('WooCommerce')) {
+        add_action('admin_notices', function() {
+            $class = 'notice notice-error';
+            $message = __('Sinappsus GoGeothermal Plugin requires WooCommerce to be installed and active.', 'sinappsus-ggt-wp-plugin');
+            printf('<div class="%1$s"><p>%2$s</p></div>', esc_attr($class), esc_html($message));
+        });
+        return;
+    }
+
     require_once(plugin_basename('includes/sinappsus-ggt-wp-plugin.php'));
     load_plugin_textdomain('sinappsus-ggt-wp-plugin', false, trailingslashit(dirname(plugin_basename(__FILE__))));
+
+    // Load The Go Geothermal Admin UI
+    require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/ui.php';
+
+    // Load Flexible Import functionality
+    require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/flexible-import.php';
+
+    // Load User/Accounts Mapping functionality
+    require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/user-mapping.php';
+
+    // Load Custom Product Tab for mapped fields
+    require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/product-tab.php';
+
+    // Load Product Columns customization
+    require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/product-columns.php';
 }
 
 add_action('plugins_loaded', 'ggt_sinappsus_plugin', 0);
@@ -46,17 +80,3 @@ function ggt_sinappsus_plugin_action_links($links)
 }
 add_filter('plugin_action_links_' . plugin_basename(__FILE__), 'ggt_sinappsus_plugin_action_links');
 
-// Load The Go Geothermal Admin UI
-require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/ui.php';
-
-// Load Flexible Import functionality
-require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/flexible-import.php';
-
-// Load User/Accounts Mapping functionality
-require_once GGT_SINAPPSUS_PLUGIN_PATH . '/admin/user-mapping.php';
-
-// Load Custom Product Tab for mapped fields
-require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/product-tab.php';
-
-// Load Product Columns customization
-require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/product-columns.php';

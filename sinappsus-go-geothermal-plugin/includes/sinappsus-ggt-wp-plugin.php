@@ -39,6 +39,9 @@ require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-woocommerce-customizat
 // Include order progress functionality
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-order-progress.php';
 
+// Include Cron Sync functionality
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/cron-sync.php';
+
 // Make sure the enhanced checkout CSS is loaded one way or another
 add_action('wp_enqueue_scripts', 'ggt_ensure_checkout_styles', 999);
 function ggt_ensure_checkout_styles() {
