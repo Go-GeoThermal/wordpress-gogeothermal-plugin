@@ -152,15 +152,38 @@ class GGT_Checkout_Enhancements {
         }
         
         // Use the centralized API connector
-        $endpoint = 'customers/' . urlencode($account_ref) . '/pricing';
+        // OLD: $endpoint = 'customers/' . urlencode($account_ref) . '/pricing';
+        // NEW: Call the new custom-pricing endpoint
+        $endpoint = 'customers/' . urlencode($account_ref) . '/custom-pricing';
         $response = ggt_sinappsus_connect_to_api($endpoint);
         
         if (isset($response['error'])) {
             wp_send_json_error(array('message' => $response['error']));
             return;
         }
+
+        // Transform the new API response to match what the JS expects
+        // New API returns { customer: "...", pricing: [ { stockCode, discountedPrice, ... } ] }
+        // JS expects { prices: [ { stockCode, storedPrice } ] } (or nested in response/results)
         
-        wp_send_json_success($response);
+        $mapped_prices = array();
+        
+        if (isset($response['pricing']) && is_array($response['pricing'])) {
+            foreach ($response['pricing'] as $item) {
+                // Only include if there is a valid discounted price
+                if (isset($item['stockCode']) && isset($item['discountedPrice'])) {
+                    $mapped_prices[] = array(
+                        'stockCode' => $item['stockCode'],
+                        'storedPrice' => $item['discountedPrice'], // Map new field to old field expected by JS
+                        'originalPrice' => isset($item['originalPrice']) ? $item['originalPrice'] : 0,
+                        'discountPercentage' => isset($item['discountPercentage']) ? $item['discountPercentage'] : 0
+                    );
+                }
+            }
+        }
+
+        // Return in a structure compatible with existing JS
+        wp_send_json_success(array('prices' => $mapped_prices));
     }
     
     public function apply_custom_pricing_to_cart($cart) {
@@ -273,7 +296,20 @@ class GGT_Checkout_Enhancements {
     public function ajax_update_cart_prices() {
         check_ajax_referer('ggt_checkout_nonce', 'nonce');
         
-        $prices = isset($_POST['prices']) ? $_POST['prices'] : array();
+        $prices = array();
+        
+        // Handle JS sending JSON string in 'pricing_data'
+        if (isset($_POST['pricing_data'])) {
+            $decoded = json_decode(stripslashes($_POST['pricing_data']), true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $prices = $decoded;
+            }
+        }
+        
+        // Fallback to direct array if provided
+        if (empty($prices) && isset($_POST['prices'])) {
+            $prices = $_POST['prices'];
+        }
         
         if (empty($prices) || !is_array($prices)) {
             wp_send_json_error(array('message' => 'No valid prices provided'));
