@@ -4,7 +4,7 @@
  * Description: A custom WordPress plugin to integrate WooCommerce with The Go Geothermal API.
  * Plugin URI: https://gogeothermal.co.uk
  * Author URI: https://sinappsus.agency
- * Version: 0.3.4
+ * Version: 0.4.0
  * Author: Sinappsus
  * Requires at least: 5.0
  * Tested up to: 6.8
@@ -12,7 +12,7 @@
 
 defined('ABSPATH') || exit;
 
-define('GGT_SINAPPSUS_PLUGIN_VERSION', '0.3.4');
+define('GGT_SINAPPSUS_PLUGIN_VERSION', '0.4.0');
 define('GGT_SINAPPSUS_PLUGIN_URL', untrailingslashit(plugins_url(basename(plugin_dir_path(__FILE__)), basename(__FILE__))));
 define('GGT_SINAPPSUS_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -26,7 +26,7 @@ use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 $myUpdateChecker = PucFactory::buildUpdateChecker(
     'https://raw.githubusercontent.com/Go-GeoThermal/wordpress-gogeothermal-plugin/refs/heads/master/sinappsus-go-geothermal-plugin/info.json',  
     __FILE__, 
-    'ena-sinappsus-plugin'
+    'sinappsus-go-geothermal-plugin'
 );
 
 // Activation check logic
