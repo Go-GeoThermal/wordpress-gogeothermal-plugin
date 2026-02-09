@@ -338,9 +338,11 @@ class GGT_Checkout_Enhancements {
             if ($stock_code && isset($price_map[$stock_code])) {
                 $custom_price = $price_map[$stock_code];
                 
-                // Only update if the price is different
-                $current_price = $cart_item['data']->get_price();
-                if ($current_price != $custom_price) {
+                // Only update if the price is different (using epsilon for float comparison)
+                $current_price = (float)$cart_item['data']->get_price();
+                $custom_price = (float)$custom_price;
+                
+                if (abs($current_price - $custom_price) > 0.001) {
                     $cart_item['data']->set_price($custom_price);
                     
                     // Store custom pricing data in cart item for order creation

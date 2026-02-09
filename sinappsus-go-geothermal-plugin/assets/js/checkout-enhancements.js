@@ -396,34 +396,17 @@
                         console.log('✅ [GGT] Cart prices updated successfully');
                         
                         // Extract the updated cart total from server response
-                        if (response.data && response.data.cart_total) {
-                            console.log('💰 [GGT] Server calculated new cart total:', response.data.cart_total);
-                            updateTotalsFromServer(response.data);
-                        }
+                        // if (response.data && response.data.cart_total) {
+                        //    console.log('💰 [GGT] Server calculated new cart total:', response.data.cart_total);
+                        //    updateTotalsFromServer(response.data);
+                        // }
                         
-                        // Force page reload if prices were updated on server
+                        // Trigger update_checkout instead of reloading
                         if (response.data && response.data.updated) {
-                            // Check if we just reloaded for this purpose to prevent infinite loops
-                            if (sessionStorage.getItem('ggt_price_refresh_done') === 'true') {
-                                console.log('🛑 [GGT] Server reported update, but we just reloaded. Preventing loop.');
-                                sessionStorage.removeItem('ggt_price_refresh_done');
-                                
-                                // Fallback: Update visible prices immediately
-                                updateVisiblePrices(prices);
-                                $('body').trigger('update_checkout');
-                            } else {
-                                console.log('🔄 [GGT] Prices updated on server. Forcing page reload to ensure correct display...');
-                                sessionStorage.setItem('ggt_price_refresh_done', 'true');
-                                window.location.reload();
-                            }
+                            console.log('🔄 [GGT] Prices updated on server. Triggering WooCommerce checkout update...');
+                            $('body').trigger('update_checkout', { update_shipping_method: true });
                         } else {
-                            // Not updated, clear the flag
-                            sessionStorage.removeItem('ggt_price_refresh_done');
-                            
-                            // Fallback: Update visible prices immediately if server didn't report an update
-                            console.log('🔄 [GGT] Server reported no changes, but attempting client-side update...');
-                            updateVisiblePrices(prices);
-                            $('body').trigger('update_checkout');
+                            console.log('ℹ️ [GGT] Server reported no changes needed.');
                         }
                         
                     } else {
@@ -487,10 +470,9 @@
                 }
             });
             
-            // If we couldn't update any elements, force a reload as fallback
+            // If we couldn't update any elements, just log it. standard update_checkout will handle it.
             if (!elementsUpdated) {
-                console.log('⚠️ [GGT] Could not find total elements to update. Forcing page reload...');
-                location.reload();
+                console.log('⚠️ [GGT] Could not find total elements to direct update. Waiting for standard update_checkout...');
             }
         }
     }
