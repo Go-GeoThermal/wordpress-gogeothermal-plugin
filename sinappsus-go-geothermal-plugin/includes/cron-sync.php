@@ -181,6 +181,11 @@ function ggt_run_user_sync_cron() {
     foreach ($api_users as $user_data) {
         if (empty($user_data['email'])) {
             $skipped++;
+            if (function_exists('ggt_log')) {
+                // Log why it was skipped. Try to find some identifier.
+                $ref = isset($user_data['accountRef']) ? $user_data['accountRef'] : (isset($user_data['companyName']) ? $user_data['companyName'] : 'Unknown');
+                ggt_log("User Sync Skipped: Missing email address. Ref: " . $ref, 'CRON');
+            }
             continue;
         }
 

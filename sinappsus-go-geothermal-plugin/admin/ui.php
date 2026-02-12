@@ -2083,6 +2083,18 @@ function ggt_core_sync_user($user_data) {
     // Apply mapping to user data (map-only semantics) and persist via helper
     if (function_exists('ggt_apply_user_field_mapping')) {
         $mapped = ggt_apply_user_field_mapping($user_data);
+        
+        if (function_exists('ggt_log')) {
+             if (isset($user_data['creditLimit'])) {
+                  ggt_log("Sync User {$user_data['email']} - Has creditLimit: " . $user_data['creditLimit'], 'DEBUG_SYNC');
+             }
+             if (isset($mapped['creditLimit'])) {
+                  ggt_log("Sync User {$user_data['email']} - Mapped creditLimit: " . $mapped['creditLimit'], 'DEBUG_SYNC');
+             } else {
+                  ggt_log("Sync User {$user_data['email']} - creditLimit NOT mapped (check ggt_user_field_mapping)", 'DEBUG_SYNC');
+             }
+        }
+
         if (function_exists('ggt_update_user_targets')) {
             ggt_update_user_targets($user_id, $mapped);
         } else {
