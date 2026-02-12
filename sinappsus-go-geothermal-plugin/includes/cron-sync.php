@@ -3,6 +3,16 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Add custom cron interval
+add_filter('cron_schedules', 'ggt_add_cron_interval');
+function ggt_add_cron_interval($schedules) {
+    $schedules['twodays'] = array(
+        'interval' => 2 * 24 * 60 * 60, // 2 days in seconds
+        'display'  => esc_html__('Every Two Days'),
+    );
+    return $schedules;
+}
+
 // Hook for scheduling
 add_action('init', 'ggt_schedule_cron_events');
 
@@ -10,10 +20,33 @@ function ggt_schedule_cron_events() {
     if (!wp_next_scheduled('ggt_daily_sync_event')) {
         wp_schedule_event(strtotime('tomorrow midnight'), 'daily', 'ggt_daily_sync_event');
     }
+    
+    if (!wp_next_scheduled('ggt_log_cleanup_event')) {
+        wp_schedule_event(strtotime('tomorrow midnight'), 'twodays', 'ggt_log_cleanup_event');
+    }
 }
 
 // Hook for execution
 add_action('ggt_daily_sync_event', 'ggt_execute_daily_sync');
+add_action('ggt_log_cleanup_event', 'ggt_execute_log_cleanup');
+
+function ggt_execute_log_cleanup() {
+    // Check if cleanup is enabled
+    if (!get_option('ggt_log_cleanup_enabled', 1)) {
+        return;
+    }
+
+    $log_file = GGT_SINAPPSUS_PLUGIN_PATH . 'logs/debug.log';
+    
+    if (file_exists($log_file)) {
+        // Delete the file completely as requested
+        @unlink($log_file);
+        
+        if (function_exists('ggt_log')) {
+            ggt_log("Logs cleaned up (deleted) by scheduled task.", 'CRON');
+        }
+    }
+}
 
 function ggt_execute_daily_sync() {
     // Check if plugin is enabled

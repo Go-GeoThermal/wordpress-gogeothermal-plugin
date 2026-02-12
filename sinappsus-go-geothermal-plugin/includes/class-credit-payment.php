@@ -64,9 +64,10 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         $cart_total = WC()->cart->total;
 
         // Try different meta keys where credit limit might be stored
-        $credit_limit = get_user_meta($user_id, 'CreditLimit', true);
+        $credit_limit = get_user_meta($user_id, 'creditLimit', true);
         if (empty($credit_limit)) {
-            $credit_limit = get_user_meta($user_id, 'creditLimit', true);
+            // Check legacy key just in case, but prefer creditLimit
+            $credit_limit = get_user_meta($user_id, 'CreditLimit', true);
         }
         if (empty($credit_limit)) {
             $credit_limit = get_user_meta($user_id, 'credit_limit', true);

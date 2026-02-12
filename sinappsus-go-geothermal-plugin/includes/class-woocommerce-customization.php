@@ -25,99 +25,33 @@ add_action('wp_footer', 'ggt_delivery_date_field_footer_fallback');
 function ggt_delivery_date_field_footer_fallback() {
     if (!is_checkout()) return;
     
-    ?>
-    <script type="text/javascript">
-    jQuery(document).ready(function($) {
-        // Wait a bit to allow other scripts to complete
-        setTimeout(function() {
-            // Only add if the field doesn't exist
-            if ($('#ggt_delivery_date').length === 0) {
-                console.log('🔄 [GGT] Adding delivery date via footer fallback');
-                
-                var dateField = `
-                    <div id="ggt_delivery_date_field" class="form-row form-row-wide" style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; background: #f8f8f8;">
-                        <h3>Desired Delivery Date</h3>
-                        <p>Please select your preferred delivery date. Note: Deliveries are not available on weekends, UK public holidays, or within 2 business days from today.</p>
-                        <label for="ggt_delivery_date">Select your desired delivery date <abbr class="required" title="required">*</abbr></label>
-                        <input type="text" class="input-text" name="ggt_delivery_date" id="ggt_delivery_date" placeholder="Click to select a date" required readonly>
-                    </div>
-                `;
-                
-                // Try several potential insertion points
-                var insertionPoints = [
-                    '#payment',
-                    '.woocommerce-checkout-payment',
-                    '.woocommerce-checkout-review-order',
-                    '#order_review',
-                    '.place-order',
-                    '#place_order',
-                    '.woocommerce-billing-fields',
-                    '.woocommerce-shipping-fields'
-                ];
-                
-                var inserted = false;
-                $.each(insertionPoints, function(i, selector) {
-                    if (!inserted && $(selector).length) {
-                        console.log('🔍 [GGT] Found insertion point: ' + selector);
-                        
-                        if (selector === '#place_order') {
-                            $(selector).parent().before(dateField);
-                        } else {
-                            $(selector).before(dateField);
-                        }
-                        
-                        inserted = $('#ggt_delivery_date').length > 0;
-                        if (inserted) return false;
-                    }
-                });
-                
-                // Fallback to just adding it to the end of the checkout form
-                if (!inserted && $('form.checkout').length) {
-                    $('form.checkout').append(dateField);
-                    inserted = $('#ggt_delivery_date').length > 0;
-                }
-                
-                // Initialize the datepicker if possible
-                if (inserted && typeof $.fn.datepicker === 'function') {
-                    var ukHolidays = [
-                        // 2023 UK Holidays
-                        '2023-01-02', '2023-04-07', '2023-04-10', '2023-05-01', '2023-05-29', 
-                        '2023-08-28', '2023-12-25', '2023-12-26',
-                        // 2024 UK Holidays
-                        '2024-01-01', '2024-03-29', '2024-04-01', '2024-05-06', '2024-05-27', 
-                        '2024-08-26', '2024-12-25', '2024-12-26'
-                    ];
-                    
-                    $('#ggt_delivery_date').datepicker({
-                        dateFormat: 'yy-mm-dd',
-                        minDate: '+2d',
-                        maxDate: '+6m',
-                        beforeShowDay: function(date) {
-                            var day = date.getDay();
-                            if (day === 0 || day === 6) {
-                                return [false, '', 'No deliveries on weekends'];
-                            }
-                            
-                            var dateString = $.datepicker.formatDate('yy-mm-dd', date);
-                            if ($.inArray(dateString, ukHolidays) !== -1) {
-                                return [false, 'uk-holiday', 'No deliveries on UK public holidays'];
-                            }
-                            
-                            return [true, '', ''];
-                        }
-                    });
-                    
-                    $('#ggt_delivery_date').on('click', function() {
-                        $(this).datepicker('show');
-                    });
-                    
-                    console.log('✅ [GGT] Delivery date field created and initialized via footer fallback');
-                }
-            }
-        }, 1500); // Give more time for the page to finish rendering
-    });
-    </script>
-    <?php
+    // Get holidays from settings
+    $holiday_dates_str = get_option('ggt_holiday_dates', '');
+    // Default holidays if not set (fallback)
+    if (empty($holiday_dates_str)) {
+        $holiday_dates_str = "2024-01-01\n2024-03-29\n2024-04-01\n2024-05-06\n2024-05-27\n2024-08-26\n2024-12-25\n2024-12-26\n2025-01-01\n2025-04-18\n2025-04-21\n2025-05-05\n2025-05-26\n2025-08-25\n2025-12-25\n2025-12-26";
+    }
+    
+    // Process holidays into array
+    $holiday_dates = array_filter(array_map('trim', explode("\n", $holiday_dates_str)));
+    
+    // Enqueue the external JS file
+    wp_enqueue_script(
+        'ggt-checkout-delivery-date', 
+        GGT_SINAPPSUS_PLUGIN_URL . '/assets/js/checkout-delivery-date.js', 
+        array('jquery', 'jquery-ui-datepicker'), 
+        '1.0.0', 
+        true
+    );
+    
+    // Pass data to script
+    wp_localize_script('ggt-checkout-delivery-date', 'ggtDeliverySettings', array(
+        'holidays' => array_values($holiday_dates),
+        'minDate' => '+2d',
+        'maxDate' => '+6m',
+        'noWeekendText' => __('No deliveries on weekends', 'sinappsus-ggt-wp-plugin'),
+        'holidayText' => __('No deliveries on UK public holidays', 'sinappsus-ggt-wp-plugin')
+    ));
 }
 
 // Fix validation and saving of delivery date

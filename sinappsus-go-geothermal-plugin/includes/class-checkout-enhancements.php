@@ -43,7 +43,7 @@ class GGT_Checkout_Enhancements {
             // jQuery UI styling with a direct protocol-relative URL
             wp_enqueue_style(
                 'jquery-ui-style',
-                '//code.jquery.com/ui/1.13.2/themes/smoothness/jquery-ui.css',
+                GGT_SINAPPSUS_PLUGIN_URL . '/assets/css/jquery-ui.css',
                 array(),
                 '1.13.2'
             );
