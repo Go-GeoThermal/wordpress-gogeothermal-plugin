@@ -68,6 +68,9 @@ function ggt_sinappsus_plugin()
 
     // Load Product Columns customization
     require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/product-columns.php';
+
+    // Load User Columns customization (Account Ref)
+    require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/user-columns.php';
 }
 
 add_action('plugins_loaded', 'ggt_sinappsus_plugin', 0);
