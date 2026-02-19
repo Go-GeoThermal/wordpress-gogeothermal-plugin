@@ -316,17 +316,6 @@ class Sinappsus_GGT_Admin_UI
             </div>
 
             <div id="ggt-tab-settings" class="ggt-tab-panel" style="display:none;">
-                <h2>General Settings</h2>
-                <table class="form-table">
-                    <tr valign="top">
-                        <th scope="row">Holiday Dates (YYYY-MM-DD)</th>
-                        <td>
-                            <textarea name="ggt_holiday_dates" rows="10" cols="50" class="large-text code"><?php echo esc_textarea(get_option('ggt_holiday_dates', '')); ?></textarea>
-                            <p class="description">Enter holidays one per line in YYYY-MM-DD format. These dates will be disabled in the checkout delivery picker.</p>
-                        </td>
-                    </tr>
-                </table>
-                <hr>
                 <h2>Registration & Import Settings</h2>
                 <form method="post" action="options.php">
                     <?php
@@ -1790,12 +1779,6 @@ function ggt_sinappsus_register_settings()
     register_setting('ggt_sinappsus_settings_group', 'ggt_auto_sync_users');
     register_setting('ggt_sinappsus_settings_group', 'ggt_log_cleanup_enabled');
     
-    // Holiday dates
-    register_setting('ggt_sinappsus_settings_group', 'ggt_holiday_dates', [
-        'type' => 'string',
-        'sanitize_callback' => 'sanitize_textarea_field'
-    ]);
-
     // Dashboard tab
     register_setting('ggt_sinappsus_dashboard_group', 'ggt_plugin_enabled');
 

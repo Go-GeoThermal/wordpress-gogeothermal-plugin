@@ -8,9 +8,6 @@ if (!defined('ABSPATH')) {
 // include api call custom class for authenticated requests
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/utils/class-api-connector.php';
 
-// include go geothermal api middleware tools
-require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/sage/woocommerce-sage-integration.php';
-
 // Make sure the blocks directory exists
 if (!file_exists(GGT_SINAPPSUS_PLUGIN_PATH . '/includes/blocks')) {
     mkdir(GGT_SINAPPSUS_PLUGIN_PATH . '/includes/blocks', 0755, true);

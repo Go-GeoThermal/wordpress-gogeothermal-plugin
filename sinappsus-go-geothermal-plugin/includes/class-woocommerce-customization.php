@@ -25,15 +25,37 @@ add_action('wp_footer', 'ggt_delivery_date_field_footer_fallback');
 function ggt_delivery_date_field_footer_fallback() {
     if (!is_checkout()) return;
     
-    // Get holidays from settings
-    $holiday_dates_str = get_option('ggt_holiday_dates', '');
-    // Default holidays if not set (fallback)
-    if (empty($holiday_dates_str)) {
-        $holiday_dates_str = "2024-01-01\n2024-03-29\n2024-04-01\n2024-05-06\n2024-05-27\n2024-08-26\n2024-12-25\n2024-12-26\n2025-01-01\n2025-04-18\n2025-04-21\n2025-05-05\n2025-05-26\n2025-08-25\n2025-12-25\n2025-12-26";
-    }
+    // Get holidays from UK Gov API (cached)
+    $holiday_dates = get_transient('ggt_uk_bank_holidays');
     
-    // Process holidays into array
-    $holiday_dates = array_filter(array_map('trim', explode("\n", $holiday_dates_str)));
+    if (false === $holiday_dates) {
+        $holiday_dates = array();
+        // Fallback hardcoded dates in case API fails
+        $holiday_dates = array(
+            "2024-01-01", "2024-03-29", "2024-04-01", "2024-05-06", "2024-05-27", 
+            "2024-08-26", "2024-12-25", "2024-12-26", "2025-01-01", "2025-04-18", 
+            "2025-04-21", "2025-05-05", "2025-05-26", "2025-08-25", "2025-12-25", "2025-12-26"
+        );
+        
+        $response = wp_remote_get('https://www.gov.uk/bank-holidays.json');
+        
+        if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+            $data = json_decode(wp_remote_retrieve_body($response), true);
+            
+            if (isset($data['england-and-wales']['events'])) {
+                $api_dates = array();
+                foreach ($data['england-and-wales']['events'] as $event) {
+                    $api_dates[] = $event['date'];
+                }
+                
+                if (!empty($api_dates)) {
+                    $holiday_dates = $api_dates;
+                    // Cache for 1 week
+                    set_transient('ggt_uk_bank_holidays', $holiday_dates, 7 * DAY_IN_SECONDS);
+                }
+            }
+        }
+    }
     
     // Enqueue the external JS file
     wp_enqueue_script(
@@ -45,7 +67,7 @@ function ggt_delivery_date_field_footer_fallback() {
     );
     
     // Pass data to script
-    wp_localize_script('ggt-checkout-delivery-date', 'ggtDeliverySettings', array(
+    wp_localize_script('ggt-checkout-delivery-date', 'ggt_checkout_params', array(
         'holidays' => array_values($holiday_dates),
         'minDate' => '+2d',
         'maxDate' => '+6m',
