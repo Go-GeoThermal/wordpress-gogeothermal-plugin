@@ -297,57 +297,23 @@
     
     function fetchCustomerPricing() {
         if (pricingFetched) return;
+        
+        // Custom pricing is now applied server-side by GGT_Customer_Pricing.
+        // Prices are already correct in the cart — no need to fetch and re-apply via AJAX.
+        if (ggt_checkout_data && ggt_checkout_data.has_custom_pricing) {
+            console.log('✅ [GGT] Custom pricing is applied server-side. No AJAX price update needed.');
+            pricingFetched = true;
+            return;
+        }
+        
         if (!ggt_checkout_data || !ggt_checkout_data.account_ref) {
             console.log('⚠️ [GGT] No customer account reference found.');
             pricingFetched = true;
             return;
         }
         
-        console.log('🔄 [GGT] Fetching custom pricing for customer...');
-        
-        $.ajax({
-            url: ggt_checkout_data.ajax_url,
-            type: 'POST',
-            data: {
-                action: 'ggt_fetch_customer_pricing',
-                nonce: ggt_checkout_data.nonce,
-                account_ref: ggt_checkout_data.account_ref
-            },
-            success: function(response) {
-                pricingFetched = true;
-                console.log('🔄 [GGT] Pricing response:', response);
-                // Check multiple possible paths to find pricing data
-                let prices = null;
-                
-                if (response.success && response.data) {
-                    if (response.data.response && response.data.response.prices) {
-                        prices = response.data.response.prices;
-                        console.log('✅ [GGT] Found prices in response.data.response.prices');
-                    } else if (response.data.results && response.data.results.prices) {
-                        prices = response.data.results.prices;
-                        console.log('✅ [GGT] Found prices in response.data.results.prices');
-                    } else if (response.data.prices) {
-                        prices = response.data.prices;
-                        console.log('✅ [GGT] Found prices in response.data.prices');
-                    } else {
-                        console.log('⚠️ [GGT] No prices found in response structure');
-                    }
-                    
-                    if (prices) {
-                        console.log('✅ [GGT] Found ' + prices.length + ' custom prices');
-                        updateCartPrices(prices);
-                    } else {
-                        console.log('⚠️ [GGT] No custom pricing found in response structure:', response.data);
-                    }
-                } else {
-                    console.log('⚠️ [GGT] No custom pricing found or error occurred:', response);
-                }
-            },
-            error: function(xhr, status, error) {
-                pricingFetched = true;
-                console.error('❌ [GGT] Error fetching pricing data:', error);
-            }
-        });
+        console.log('ℹ️ [GGT] No server-side pricing detected. Skipping legacy AJAX pricing fetch.');
+        pricingFetched = true;
     }
     
     function updateCartPrices(prices) {

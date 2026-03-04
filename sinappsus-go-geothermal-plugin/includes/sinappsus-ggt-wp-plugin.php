@@ -8,6 +8,9 @@ if (!defined('ABSPATH')) {
 // include api call custom class for authenticated requests
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/utils/class-api-connector.php';
 
+// Load Customer Pricing (global price list support — must load before checkout enhancements)
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-customer-pricing.php';
+
 // Make sure the blocks directory exists
 if (!file_exists(GGT_SINAPPSUS_PLUGIN_PATH . '/includes/blocks')) {
     mkdir(GGT_SINAPPSUS_PLUGIN_PATH . '/includes/blocks', 0755, true);
