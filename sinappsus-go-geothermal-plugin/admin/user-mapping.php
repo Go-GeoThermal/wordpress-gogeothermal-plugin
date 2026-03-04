@@ -298,6 +298,22 @@ function ggt_apply_user_field_mapping($data) {
     $mapping = get_option('ggt_user_field_mapping', array());
     if (is_object($mapping)) { $mapping = (array)$mapping; }
 
+    // Force vital default mappings if they are missing. 
+    // This fixes the issue where creditLimit isn't updated if the mapping settings haven't been explicitly saved.
+    if (!isset($mapping['creditLimit'])) {
+        $mapping['creditLimit'] = 'creditLimit';
+    }
+    // Handle potential PascalCase from older API versions or manual entry
+    if (!isset($mapping['CreditLimit'])) {
+        $mapping['CreditLimit'] = 'creditLimit';
+    }
+    if (!isset($mapping['accountRef'])) {
+        $mapping['accountRef'] = 'accountRef';
+    }
+    if (!isset($mapping['balance'])) {
+        $mapping['balance'] = 'balance';
+    }
+
     $out = array();
     foreach ((array)$data as $key => $value) {
         if (isset($mapping[$key]) && !empty($mapping[$key])) {

@@ -462,6 +462,16 @@ class Sinappsus_GGT_Admin_UI
                                 <p class="description">Requires User Field Mapping to be configured.</p>
                             </td>
                         </tr>
+                        <tr valign="top">
+                            <th scope="row">Log Cleanup</th>
+                            <td>
+                                <label for="ggt_log_cleanup_enabled">
+                                    <input type="checkbox" id="ggt_log_cleanup_enabled" name="ggt_log_cleanup_enabled" value="1" <?php checked(1, get_option('ggt_log_cleanup_enabled', 1), true); ?> />
+                                    Automatically delete log files every 2 days
+                                </label>
+                                <p class="description">Retains logs for debugging but prevents disk overflow.</p>
+                            </td>
+                        </tr>
                     </table>
 
                     <?php submit_button('Save Settings'); ?>
@@ -719,102 +729,143 @@ class Sinappsus_GGT_Admin_UI
                     document.querySelector('.user-sync-error-count').innerText = '0';
 
                     getToken().then(token => {
-                        document.querySelector('.user-sync-status-message').innerText = 'Fetching users from API...';
+                        document.querySelector('.user-sync-status-message').innerText = 'Initializing paginated sync...';
                         
-                        fetch('<?php echo $this->api_url; ?>/customers', {
-                                method: 'GET',
-                                headers: {
-                                    'Authorization': 'Bearer ' + token,
-                                    'Content-Type': 'application/json'
-                                }
-                            })
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data && Array.isArray(data)) {
-                                    let processed = 0;
-                                    let total = data.length;
-                                    document.querySelector('.user-sync-status-message').innerText = 'Starting synchronization of ' + total + ' users...';
-                                    document.querySelector('.user-sync-total').innerText = total;
-                                    
-                                    // Process each user sequentially to avoid overwhelming the server
-                                    function processNextUser(index) {
-                                        if (index >= data.length) {
-                                            document.querySelector('.user-sync-status-message').innerText = 'Synchronization complete!';
-                                            document.getElementById('message').innerText = 'Users synchronized successfully! Updated: ' + 
-                                                successCount + ', Failed: ' + errorCount;
-                                            // Store summary for dashboard
-                                            jQuery.post(ajaxurl, {
-                                                action: 'ggt_store_last_user_sync',
-                                                updated: successCount,
-                                                failed: errorCount,
-                                                total: total
-                                            });
-                                            
-                                            // Hide the progress container after 20 seconds
-                                            setTimeout(function() {
-                                                document.getElementById('user-sync-progress-container').style.display = 'none';
-                                            }, 20000);
-                                            return;
-                                        }
+                        let currentPage = 1;
+                        const itemsPerPage = 50;
+                        let totalUsers = 0;
+                        let isPaginated = false;
 
-                                        let user_data = data[index];
-                                        if (!user_data.email) {
-                                            processed++;
-                                            errorCount++;
-                                            document.querySelector('.user-sync-error-count').innerText = errorCount;
-                                            document.querySelector('.user-sync-status-message').innerText = 'Skipping user with no email...';
-                                            updateProgress(processed, total);
-                                            processNextUser(index + 1);
-                                            return;
-                                        }
+                        function fetchNextPage(page) {
+                            document.querySelector('.user-sync-status-message').innerText = 'Fetching page ' + page + '...';
+                            
+                            const url = '<?php echo $this->api_url; ?>/customers?itemsPerPage=' + itemsPerPage + '&page=' + page;
 
-                                        document.querySelector('.user-sync-status-message').innerText = 'Processing user: ' + user_data.email;
+                            fetch(url, {
+                                    method: 'GET',
+                                    headers: {
+                                        'Authorization': 'Bearer ' + token,
+                                        'Content-Type': 'application/json'
+                                    }
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    let users = [];
+                                    let hasMore = false;
+
+                                    if (data && data.data && Array.isArray(data.data)) {
+                                        // Paginated response
+                                        users = data.data;
+                                        totalUsers = data.total;
+                                        isPaginated = true;
+                                        hasMore = data.current_page < data.last_page;
                                         
-                                        jQuery.post(ajaxurl, {
-                                            action: 'sync_user',
-                                            user_data: user_data
-                                        }, function(response) {
-                                            processed++;
-                                            if (response.success) {
-                                                successCount++;
-                                                document.querySelector('.user-sync-success-count').innerText = successCount;
-                                            } else {
-                                                errorCount++;
-                                                document.querySelector('.user-sync-error-count').innerText = errorCount;
-                                                document.querySelector('.user-sync-status-message').innerText = 'Error with user: ' + user_data.email;
-                                            }
-                                            updateProgress(processed, total);
-                                            processNextUser(index + 1);
-                                        }).fail(function(error) {
-                                            processed++;
-                                            errorCount++;
-                                            document.querySelector('.user-sync-error-count').innerText = errorCount;
-                                            document.querySelector('.user-sync-status-message').innerText = 'Error with user: ' + user_data.email;
-                                            updateProgress(processed, total);
-                                            processNextUser(index + 1);
-                                        });
+                                        // Update total count display only on first page or if it changes
+                                        if (page === 1) {
+                                            document.querySelector('.user-sync-total').innerText = totalUsers;
+                                            document.querySelector('.user-sync-status-message').innerText = 'Starting synchronization of ' + totalUsers + ' users...';
+                                        }
+                                    } else if (Array.isArray(data)) {
+                                        // Legacy flat response (if API doesn't support pagination or itemsPerPage=-1)
+                                        users = data;
+                                        totalUsers = users.length;
+                                        isPaginated = false;
+                                        hasMore = false;
+                                        document.querySelector('.user-sync-total').innerText = totalUsers;
+                                    } else {
+                                        throw new Error('Invalid response format');
                                     }
 
-                                    // Helper function to update progress
-                                    function updateProgress(current, total) {
-                                        const percent = Math.round((current / total) * 100);
-                                        document.querySelector('.user-progress-bar').style.width = percent + '%';
-                                        document.querySelector('.user-sync-count').innerText = current;
-                                        document.getElementById('message').innerText = 'Processed: ' + current + ' of ' + total + 
-                                            ' (' + percent + '%)';
+                                    if (users.length === 0 && page === 1) {
+                                        finishSync();
+                                        return;
                                     }
 
-                                    // Start processing users
-                                    processNextUser(0);
+                                    // Process this batch
+                                    processBatch(users, 0, function() {
+                                        if (hasMore) {
+                                            currentPage++;
+                                            fetchNextPage(currentPage);
+                                        } else {
+                                            finishSync();
+                                        }
+                                    });
+                                })
+                                .catch(error => {
+                                    document.querySelector('.user-sync-status-message').innerText = 'Error: ' + error.message;
+                                    document.getElementById('message').innerText = 'An error occurred on page ' + page + ': ' + error.message;
+                                });
+                        }
+
+                        function processBatch(users, index, onBatchComplete) {
+                            if (index >= users.length) {
+                                onBatchComplete();
+                                return;
+                            }
+
+                            let user_data = users[index];
+                            let currentGlobalIndex = isPaginated ? ((currentPage - 1) * itemsPerPage) + index + 1 : index + 1;
+                            
+                            // Log skipping but keep processing
+                            if (!user_data.email) {
+                                errorCount++; // Count as "processed but failed/skipped"
+                                document.querySelector('.user-sync-error-count').innerText = errorCount;
+                                updateProgress(currentGlobalIndex, totalUsers);
+                                processBatch(users, index + 1, onBatchComplete);
+                                return;
+                            }
+
+                            document.querySelector('.user-sync-status-message').innerText = 'Processing user ' + currentGlobalIndex + '/' + totalUsers + ': ' + user_data.email;
+                            
+                            jQuery.post(ajaxurl, {
+                                action: 'sync_user',
+                                user_data: user_data
+                            }, function(response) {
+                                if (response.success) {
+                                    successCount++;
+                                    document.querySelector('.user-sync-success-count').innerText = successCount;
                                 } else {
-                                    document.querySelector('.user-sync-status-message').innerText = 'Error: Invalid response from API';
-                                    document.getElementById('message').innerText = 'Invalid response from API.';
+                                    errorCount++;
+                                    document.querySelector('.user-sync-error-count').innerText = errorCount;
+                                    console.warn('Sync failed for ' + user_data.email, response);
                                 }
-                            })
-                            .catch(error => {
-                                document.querySelector('.user-sync-status-message').innerText = 'Error: ' + error.message;
-                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                                updateProgress(currentGlobalIndex, totalUsers);
+                                processBatch(users, index + 1, onBatchComplete);
+                            }).fail(function(xhr, status, error) {
+                                errorCount++;
+                                document.querySelector('.user-sync-error-count').innerText = errorCount;
+                                console.error('Request failed for ' + user_data.email, error);
+                                updateProgress(currentGlobalIndex, totalUsers);
+                                processBatch(users, index + 1, onBatchComplete);
                             });
+                        }
+
+                        function updateProgress(current, total) {
+                            const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+                            document.querySelector('.user-progress-bar').style.width = percent + '%';
+                            document.querySelector('.user-sync-count').innerText = current;
+                        }
+
+                        function finishSync() {
+                            document.querySelector('.user-sync-status-message').innerText = 'Synchronization complete!';
+                            document.getElementById('message').innerText = 'Users synchronized successfully! Updated: ' + 
+                                successCount + ', Failed: ' + errorCount;
+                            
+                            jQuery.post(ajaxurl, {
+                                action: 'ggt_store_last_user_sync',
+                                updated: successCount,
+                                failed: errorCount,
+                                total: totalUsers
+                            });
+                            
+                            setTimeout(function() {
+                                document.getElementById('user-sync-progress-container').style.display = 'none';
+                            }, 20000);
+                        }
+
+                        // Start
+                        fetchNextPage(1);
+
                     }).catch(error => {
                         document.querySelector('.user-sync-status-message').innerText = 'Authentication error';
                         document.getElementById('message').innerText = 'An error occurred: ' + error;
@@ -1726,7 +1777,8 @@ function ggt_sinappsus_register_settings()
     register_setting('ggt_sinappsus_settings_group', 'ggt_account_not_found_email');
     register_setting('ggt_sinappsus_settings_group', 'ggt_auto_sync_products');
     register_setting('ggt_sinappsus_settings_group', 'ggt_auto_sync_users');
-
+    register_setting('ggt_sinappsus_settings_group', 'ggt_log_cleanup_enabled');
+    
     // Dashboard tab
     register_setting('ggt_sinappsus_dashboard_group', 'ggt_plugin_enabled');
 
@@ -2055,6 +2107,18 @@ function ggt_core_sync_user($user_data) {
     // Apply mapping to user data (map-only semantics) and persist via helper
     if (function_exists('ggt_apply_user_field_mapping')) {
         $mapped = ggt_apply_user_field_mapping($user_data);
+        
+        if (function_exists('ggt_log')) {
+             if (isset($user_data['creditLimit'])) {
+                  ggt_log("Sync User {$user_data['email']} - Has creditLimit: " . $user_data['creditLimit'], 'DEBUG_SYNC');
+             }
+             if (isset($mapped['creditLimit'])) {
+                  ggt_log("Sync User {$user_data['email']} - Mapped creditLimit: " . $mapped['creditLimit'], 'DEBUG_SYNC');
+             } else {
+                  ggt_log("Sync User {$user_data['email']} - creditLimit NOT mapped (check ggt_user_field_mapping)", 'DEBUG_SYNC');
+             }
+        }
+
         if (function_exists('ggt_update_user_targets')) {
             ggt_update_user_targets($user_id, $mapped);
         } else {

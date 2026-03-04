@@ -297,57 +297,23 @@
     
     function fetchCustomerPricing() {
         if (pricingFetched) return;
+        
+        // Custom pricing is now applied server-side by GGT_Customer_Pricing.
+        // Prices are already correct in the cart — no need to fetch and re-apply via AJAX.
+        if (ggt_checkout_data && ggt_checkout_data.has_custom_pricing) {
+            console.log('✅ [GGT] Custom pricing is applied server-side. No AJAX price update needed.');
+            pricingFetched = true;
+            return;
+        }
+        
         if (!ggt_checkout_data || !ggt_checkout_data.account_ref) {
             console.log('⚠️ [GGT] No customer account reference found.');
             pricingFetched = true;
             return;
         }
         
-        console.log('🔄 [GGT] Fetching custom pricing for customer...');
-        
-        $.ajax({
-            url: ggt_checkout_data.ajax_url,
-            type: 'POST',
-            data: {
-                action: 'ggt_fetch_customer_pricing',
-                nonce: ggt_checkout_data.nonce,
-                account_ref: ggt_checkout_data.account_ref
-            },
-            success: function(response) {
-                pricingFetched = true;
-                console.log('🔄 [GGT] Pricing response:', response);
-                // Check multiple possible paths to find pricing data
-                let prices = null;
-                
-                if (response.success && response.data) {
-                    if (response.data.response && response.data.response.prices) {
-                        prices = response.data.response.prices;
-                        console.log('✅ [GGT] Found prices in response.data.response.prices');
-                    } else if (response.data.results && response.data.results.prices) {
-                        prices = response.data.results.prices;
-                        console.log('✅ [GGT] Found prices in response.data.results.prices');
-                    } else if (response.data.prices) {
-                        prices = response.data.prices;
-                        console.log('✅ [GGT] Found prices in response.data.prices');
-                    } else {
-                        console.log('⚠️ [GGT] No prices found in response structure');
-                    }
-                    
-                    if (prices) {
-                        console.log('✅ [GGT] Found ' + prices.length + ' custom prices');
-                        updateCartPrices(prices);
-                    } else {
-                        console.log('⚠️ [GGT] No custom pricing found in response structure:', response.data);
-                    }
-                } else {
-                    console.log('⚠️ [GGT] No custom pricing found or error occurred:', response);
-                }
-            },
-            error: function(xhr, status, error) {
-                pricingFetched = true;
-                console.error('❌ [GGT] Error fetching pricing data:', error);
-            }
-        });
+        console.log('ℹ️ [GGT] No server-side pricing detected. Skipping legacy AJAX pricing fetch.');
+        pricingFetched = true;
     }
     
     function updateCartPrices(prices) {
@@ -396,34 +362,17 @@
                         console.log('✅ [GGT] Cart prices updated successfully');
                         
                         // Extract the updated cart total from server response
-                        if (response.data && response.data.cart_total) {
-                            console.log('💰 [GGT] Server calculated new cart total:', response.data.cart_total);
-                            updateTotalsFromServer(response.data);
-                        }
+                        // if (response.data && response.data.cart_total) {
+                        //    console.log('💰 [GGT] Server calculated new cart total:', response.data.cart_total);
+                        //    updateTotalsFromServer(response.data);
+                        // }
                         
-                        // Force page reload if prices were updated on server
+                        // Trigger update_checkout instead of reloading
                         if (response.data && response.data.updated) {
-                            // Check if we just reloaded for this purpose to prevent infinite loops
-                            if (sessionStorage.getItem('ggt_price_refresh_done') === 'true') {
-                                console.log('🛑 [GGT] Server reported update, but we just reloaded. Preventing loop.');
-                                sessionStorage.removeItem('ggt_price_refresh_done');
-                                
-                                // Fallback: Update visible prices immediately
-                                updateVisiblePrices(prices);
-                                $('body').trigger('update_checkout');
-                            } else {
-                                console.log('🔄 [GGT] Prices updated on server. Forcing page reload to ensure correct display...');
-                                sessionStorage.setItem('ggt_price_refresh_done', 'true');
-                                window.location.reload();
-                            }
+                            console.log('🔄 [GGT] Prices updated on server. Triggering WooCommerce checkout update...');
+                            $('body').trigger('update_checkout', { update_shipping_method: true });
                         } else {
-                            // Not updated, clear the flag
-                            sessionStorage.removeItem('ggt_price_refresh_done');
-                            
-                            // Fallback: Update visible prices immediately if server didn't report an update
-                            console.log('🔄 [GGT] Server reported no changes, but attempting client-side update...');
-                            updateVisiblePrices(prices);
-                            $('body').trigger('update_checkout');
+                            console.log('ℹ️ [GGT] Server reported no changes needed.');
                         }
                         
                     } else {
@@ -487,10 +436,9 @@
                 }
             });
             
-            // If we couldn't update any elements, force a reload as fallback
+            // If we couldn't update any elements, just log it. standard update_checkout will handle it.
             if (!elementsUpdated) {
-                console.log('⚠️ [GGT] Could not find total elements to update. Forcing page reload...');
-                location.reload();
+                console.log('⚠️ [GGT] Could not find total elements to direct update. Waiting for standard update_checkout...');
             }
         }
     }

@@ -13,7 +13,7 @@ class GGT_Checkout_Enhancements {
         // Enqueue scripts earlier to ensure they're loaded before other scripts
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'), 5);
         
-        // Register AJAX handlers
+        // Register AJAX handlers (kept for backwards compatibility; pricing is now handled globally by GGT_Customer_Pricing)
         add_action('wp_ajax_ggt_fetch_customer_pricing', array($this, 'ajax_fetch_customer_pricing'));
         add_action('wp_ajax_nopriv_ggt_fetch_customer_pricing', array($this, 'ajax_fetch_customer_pricing'));
         
@@ -23,12 +23,15 @@ class GGT_Checkout_Enhancements {
         add_action('wp_ajax_ggt_fetch_delivery_addresses', array($this, 'ajax_fetch_delivery_addresses'));
         add_action('wp_ajax_nopriv_ggt_fetch_delivery_addresses', array($this, 'ajax_fetch_delivery_addresses'));
         
+        // AJAX handler to refresh pricing cache
+        add_action('wp_ajax_ggt_refresh_customer_pricing_cache', array($this, 'ajax_refresh_pricing_cache'));
+        
         // Add stock code data attribute to cart items  
         add_filter('woocommerce_cart_item_class', array($this, 'add_stock_code_to_cart_item'), 10, 3);
         add_action('woocommerce_cart_item_name', array($this, 'add_stock_code_data_attribute'), 10, 3);
         
-        // Ensure custom prices persist during checkout and order creation
-        add_action('woocommerce_before_calculate_totals', array($this, 'apply_custom_pricing_to_cart'), 10, 1);
+        // Custom pricing is now applied globally by GGT_Customer_Pricing::apply_prices_to_cart
+        // We keep the order item meta saver for traceability
         add_action('woocommerce_checkout_create_order_line_item', array($this, 'save_custom_price_to_order_item'), 10, 4);
         add_action('woocommerce_checkout_order_processed', array($this, 'log_order_totals'), 10, 1);
     }
@@ -43,7 +46,7 @@ class GGT_Checkout_Enhancements {
             // jQuery UI styling with a direct protocol-relative URL
             wp_enqueue_style(
                 'jquery-ui-style',
-                '//code.jquery.com/ui/1.13.2/themes/smoothness/jquery-ui.css',
+                GGT_SINAPPSUS_PLUGIN_URL . '/assets/css/jquery-ui.css',
                 array(),
                 '1.13.2'
             );
@@ -75,11 +78,16 @@ class GGT_Checkout_Enhancements {
             
             // Get customer account reference
             $account_ref = '';
+            $has_custom_pricing = false;
             if (is_user_logged_in()) {
                 $user_id = get_current_user_id();
                 $account_ref = get_user_meta($user_id, 'accountRef', true);
                 if (!$account_ref) {
                     $account_ref = get_user_meta($user_id, 'account_ref', true);
+                }
+                // Check if user has custom pricing (already loaded by GGT_Customer_Pricing)
+                if (class_exists('GGT_Customer_Pricing')) {
+                    $has_custom_pricing = GGT_Customer_Pricing::customer_has_custom_pricing();
                 }
             }
             
@@ -91,7 +99,8 @@ class GGT_Checkout_Enhancements {
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('ggt_checkout_nonce'),
                 'account_ref' => $account_ref,
-                'cart_stock_codes' => $cart_stock_codes
+                'cart_stock_codes' => $cart_stock_codes,
+                'has_custom_pricing' => $has_custom_pricing, // Tells JS that prices are already applied server-side
             ));
         }
     }
@@ -141,6 +150,11 @@ class GGT_Checkout_Enhancements {
         return $product_name;
     }
     
+    /**
+     * AJAX: Fetch customer pricing.
+     * Now returns data from the globally-cached GGT_Customer_Pricing class
+     * instead of making a separate API call. Kept for backwards compatibility.
+     */
     public function ajax_fetch_customer_pricing() {
         check_ajax_referer('ggt_checkout_nonce', 'nonce');
         
@@ -151,89 +165,90 @@ class GGT_Checkout_Enhancements {
             return;
         }
         
-        // Use the centralized API connector
-        $endpoint = 'customers/' . urlencode($account_ref) . '/pricing';
+        // Use the globally-cached price map from GGT_Customer_Pricing
+        // This avoids a duplicate API call since prices are already loaded
+        if (class_exists('GGT_Customer_Pricing')) {
+            $price_map = GGT_Customer_Pricing::get_price_map();
+            $mapped_prices = array();
+            foreach ($price_map as $stock_code => $discounted_price) {
+                $mapped_prices[] = array(
+                    'stockCode' => $stock_code,
+                    'storedPrice' => $discounted_price,
+                );
+            }
+            wp_send_json_success(array(
+                'prices' => $mapped_prices,
+                'already_applied' => true, // Signal to JS that prices are already applied server-side
+            ));
+            return;
+        }
+        
+        // Fallback: direct API call (should not normally reach here)
+        $endpoint = 'customers/' . urlencode($account_ref) . '/custom-pricing';
         $response = ggt_sinappsus_connect_to_api($endpoint);
         
         if (isset($response['error'])) {
             wp_send_json_error(array('message' => $response['error']));
             return;
         }
+
+        $mapped_prices = array();
         
-        wp_send_json_success($response);
+        if (isset($response['pricing']) && is_array($response['pricing'])) {
+            foreach ($response['pricing'] as $item) {
+                if (isset($item['stockCode']) && isset($item['discountedPrice'])) {
+                    $mapped_prices[] = array(
+                        'stockCode' => $item['stockCode'],
+                        'storedPrice' => $item['discountedPrice'],
+                        'originalPrice' => isset($item['originalPrice']) ? $item['originalPrice'] : 0,
+                        'discountPercentage' => isset($item['discountPercentage']) ? $item['discountPercentage'] : 0
+                    );
+                }
+            }
+        }
+
+        wp_send_json_success(array('prices' => $mapped_prices));
     }
     
+    /**
+     * Cart pricing is now handled globally by GGT_Customer_Pricing::apply_prices_to_cart().
+     * This method is kept as a no-op safety net — if somehow it fires, it defers to the new class.
+     * The old session-based approach is removed.
+     */
     public function apply_custom_pricing_to_cart($cart) {
-        if (is_admin() && !defined('DOING_AJAX')) {
-            return;
-        }
-        
-        // Get custom pricing from session/user meta if available
-        $account_ref = '';
-        if (is_user_logged_in()) {
-            $user_id = get_current_user_id();
-            $account_ref = get_user_meta($user_id, 'accountRef', true);
-            if (!$account_ref) {
-                $account_ref = get_user_meta($user_id, 'account_ref', true);
-            }
-        }
-        
-        if (!$account_ref) {
-            return;
-        }
-        
-        // Check if we have custom pricing stored in session
-        $custom_pricing = WC()->session->get('ggt_custom_pricing');
-        if (!$custom_pricing) {
-            return;
-        }
-        
-        $this->logger->info('Applying custom pricing to cart during calculation', array('source' => 'ggt-checkout'));
-        
-        // Create price map from custom pricing
-        $price_map = array();
-        foreach ($custom_pricing as $price_item) {
-            if (!empty($price_item['stockCode']) && isset($price_item['storedPrice'])) {
-                $price_map[$price_item['stockCode']] = $price_item['storedPrice'];
-            }
-        }
-        
-        // Apply custom prices to cart items
-        foreach ($cart->get_cart() as $cart_item_key => $cart_item) {
-            $product_id = $cart_item['product_id'];
-            $stock_code = get_post_meta($product_id, '_stockCode', true);
-            
-            if ($stock_code && isset($price_map[$stock_code])) {
-                $custom_price = $price_map[$stock_code];
-                $cart_item['data']->set_price($custom_price);
-                
-                // Store the custom price in cart item data for later reference
-                $cart_item['ggt_custom_price'] = $custom_price;
-                $cart_item['ggt_stock_code'] = $stock_code;
-                
-                $this->logger->info(
-                    sprintf('Applied custom price %f to product %s (stock: %s)', 
-                        $custom_price, 
-                        $product_id, 
-                        $stock_code
-                    ), 
-                    array('source' => 'ggt-checkout')
-                );
-            }
-        }
+        // Pricing is now applied globally by GGT_Customer_Pricing.
+        // This hook registration has been removed from __construct.
+        // If called directly, do nothing.
+        return;
     }
     
     public function save_custom_price_to_order_item($item, $cart_item_key, $values, $order) {
-        // If this cart item had a custom price, save it to the order item
-        if (isset($values['ggt_custom_price']) && isset($values['ggt_stock_code'])) {
-            $item->add_meta_data('_ggt_custom_price', $values['ggt_custom_price']);
-            $item->add_meta_data('_ggt_stock_code', $values['ggt_stock_code']);
-            $item->add_meta_data('_ggt_original_price', $values['data']->get_regular_price());
+        // Save custom price metadata to order items for traceability.
+        // Check both the old session-based keys and the new GGT_Customer_Pricing keys.
+        $stock_code = isset($values['ggt_stock_code']) ? $values['ggt_stock_code'] : null;
+        $custom_price = isset($values['ggt_custom_price']) ? $values['ggt_custom_price'] : null;
+        
+        // Fallback: if not set from cart item data, check via GGT_Customer_Pricing
+        if (!$stock_code && class_exists('GGT_Customer_Pricing')) {
+            $product_id = $values['product_id'] ?? ($values['data'] ? $values['data']->get_id() : 0);
+            $stock_code = get_post_meta($product_id, '_stockCode', true);
+            $custom_price = GGT_Customer_Pricing::get_custom_price($product_id);
+        }
+        
+        if ($stock_code && null !== $custom_price) {
+            $item->add_meta_data('_ggt_custom_price', $custom_price);
+            $item->add_meta_data('_ggt_stock_code', $stock_code);
+            
+            // Get the original WC price (bypassing our filters)
+            $original_price = get_post_meta($values['data']->get_id(), '_regular_price', true);
+            if ($original_price) {
+                $item->add_meta_data('_ggt_original_price', $original_price);
+            }
             
             $this->logger->info(
                 sprintf('Saved custom price %f to order item for stock code %s', 
-                    $values['ggt_custom_price'], 
-                    $values['ggt_stock_code']
+                    $custom_price, 
+                    $stock_code
                 ), 
                 array('source' => 'ggt-checkout')
             );
@@ -270,69 +285,48 @@ class GGT_Checkout_Enhancements {
         }
     }
     
+    /**
+     * AJAX: Update cart prices.
+     * With global pricing now active, this is mostly a no-op — cart prices are already correct.
+     * Kept for backwards compatibility. Will still recalculate totals if called.
+     */
     public function ajax_update_cart_prices() {
         check_ajax_referer('ggt_checkout_nonce', 'nonce');
         
-        $prices = isset($_POST['prices']) ? $_POST['prices'] : array();
-        
-        if (empty($prices) || !is_array($prices)) {
-            wp_send_json_error(array('message' => 'No valid prices provided'));
-            return;
-        }
-        
-        // Create a more accessible array of prices indexed by stock code
-        $price_map = array();
-        foreach ($prices as $price) {
-            if (!empty($price['stockCode']) && isset($price['storedPrice'])) {
-                $price_map[$price['stockCode']] = $price['storedPrice'];
-            }
-        }
-        
-        // Store custom pricing in session for persistence through order creation
-        WC()->session->set('ggt_custom_pricing', $prices);
-        
-        // Update cart item prices if they match a stock code with custom pricing
-        $cart = WC()->cart;
-        $cart_updated = false;
-        
-        foreach ($cart->get_cart() as $cart_item_key => $cart_item) {
-            $product_id = $cart_item['product_id'];
-            $stock_code = get_post_meta($product_id, '_stockCode', true);
-            
-            if ($stock_code && isset($price_map[$stock_code])) {
-                $custom_price = $price_map[$stock_code];
-                
-                // Only update if the price is different
-                $current_price = $cart_item['data']->get_price();
-                if ($current_price != $custom_price) {
-                    $cart_item['data']->set_price($custom_price);
-                    
-                    // Store custom pricing data in cart item for order creation
-                    WC()->cart->cart_contents[$cart_item_key]['ggt_custom_price'] = $custom_price;
-                    WC()->cart->cart_contents[$cart_item_key]['ggt_stock_code'] = $stock_code;
-                    
-                    $this->logger->info(
-                        sprintf('Updated price for product %s (SKU: %s) from %f to %f', 
-                            $product_id, 
-                            $stock_code,
-                            $current_price,
-                            $custom_price
-                        ), 
-                        array('source' => 'ggt-checkout')
-                    );
-                    $cart_updated = true;
-                }
-            }
-        }
-        
-        if ($cart_updated) {
-            $cart->calculate_totals();
+        // Prices are now applied globally by GGT_Customer_Pricing.
+        // Simply recalculate totals to ensure everything is in sync.
+        if (WC()->cart) {
+            WC()->cart->calculate_totals();
         }
         
         wp_send_json_success(array(
-            'updated' => $cart_updated,
-            'cart_total' => $cart->get_cart_total()
+            'updated' => true,
+            'cart_total' => WC()->cart ? WC()->cart->get_cart_total() : 0,
+            'note' => 'Prices are applied globally by server-side pricing engine.'
         ));
+    }
+    
+    /**
+     * AJAX: Force refresh the customer pricing cache.
+     */
+    public function ajax_refresh_pricing_cache() {
+        check_ajax_referer('ggt_checkout_nonce', 'nonce');
+        
+        if (!is_user_logged_in()) {
+            wp_send_json_error(array('message' => 'Not authenticated'));
+            return;
+        }
+        
+        if (class_exists('GGT_Customer_Pricing')) {
+            GGT_Customer_Pricing::clear_cache();
+            $prices = GGT_Customer_Pricing::get_price_map();
+            wp_send_json_success(array(
+                'message' => 'Pricing cache refreshed',
+                'count' => count($prices)
+            ));
+        } else {
+            wp_send_json_error(array('message' => 'Customer pricing module not available'));
+        }
     }
     
     public function ajax_fetch_delivery_addresses() {

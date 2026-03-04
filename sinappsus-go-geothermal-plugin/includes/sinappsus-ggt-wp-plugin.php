@@ -1,7 +1,4 @@
 <?php
-// define('WP_DEBUG', true);
-// define('WP_DEBUG_LOG', true);
-// define('WP_DEBUG_DISPLAY', false);
 @ini_set('display_errors', 0);
 // Exit if accessed directly
 if (!defined('ABSPATH')) {
@@ -11,8 +8,8 @@ if (!defined('ABSPATH')) {
 // include api call custom class for authenticated requests
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/utils/class-api-connector.php';
 
-// include go geothermal api middleware tools
-require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/sage/woocommerce-sage-integration.php';
+// Load Customer Pricing (global price list support — must load before checkout enhancements)
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-customer-pricing.php';
 
 // Make sure the blocks directory exists
 if (!file_exists(GGT_SINAPPSUS_PLUGIN_PATH . '/includes/blocks')) {
