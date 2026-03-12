@@ -2095,13 +2095,32 @@ function ggt_core_sync_user($user_data) {
         return new WP_Error('missing_email', 'User email is required.');
     }
 
-    $user_id = username_exists($user_data['email']);
+    $email = sanitize_email($user_data['email']);
+    $incoming_ref = isset($user_data['accountRef']) ? $user_data['accountRef'] : '';
+
+    // Try username first, then fall back to email lookup (WooCommerce users may have a different username)
+    $user_id = username_exists($email);
     if (!$user_id) {
-        $user_id = wp_create_user($user_data['email'], wp_generate_password(), $user_data['email']);
+        $user_id = email_exists($email);
+    }
+
+    if (!$user_id) {
+        // No existing user found — create new
+        $user_id = wp_create_user($email, wp_generate_password(), $email);
+        if (function_exists('ggt_log')) {
+            ggt_log("Sync User {$email} - Created new user (accountRef: {$incoming_ref})", 'DEBUG_SYNC');
+        }
+    } else {
+        if (function_exists('ggt_log')) {
+            ggt_log("Sync User {$email} - Matched existing user ID {$user_id} (accountRef: {$incoming_ref})", 'DEBUG_SYNC');
+        }
     }
 
     if (is_wp_error($user_id)) {
-        return new WP_Error('create_failed', 'Failed to create user: ' . $user_data['email']);
+        if (function_exists('ggt_log')) {
+            ggt_log("Sync User {$email} - FAILED to create/find: " . $user_id->get_error_message() . " (accountRef: {$incoming_ref})", 'DEBUG_SYNC');
+        }
+        return new WP_Error('create_failed', 'Failed to create user: ' . $email);
     }
 
     // Apply mapping to user data (map-only semantics) and persist via helper
@@ -2110,12 +2129,16 @@ function ggt_core_sync_user($user_data) {
         
         if (function_exists('ggt_log')) {
              if (isset($user_data['creditLimit'])) {
-                  ggt_log("Sync User {$user_data['email']} - Has creditLimit: " . $user_data['creditLimit'], 'DEBUG_SYNC');
+                  ggt_log("Sync User {$email} - Has creditLimit: " . $user_data['creditLimit'], 'DEBUG_SYNC');
              }
              if (isset($mapped['creditLimit'])) {
-                  ggt_log("Sync User {$user_data['email']} - Mapped creditLimit: " . $mapped['creditLimit'], 'DEBUG_SYNC');
+                  ggt_log("Sync User {$email} - Mapped creditLimit: " . $mapped['creditLimit'], 'DEBUG_SYNC');
              } else {
-                  ggt_log("Sync User {$user_data['email']} - creditLimit NOT mapped (check ggt_user_field_mapping)", 'DEBUG_SYNC');
+                  ggt_log("Sync User {$email} - creditLimit NOT mapped (check ggt_user_field_mapping)", 'DEBUG_SYNC');
+             }
+             if (!empty($incoming_ref)) {
+                  $existing_ref = get_user_meta($user_id, 'accountRef', true);
+                  ggt_log("Sync User {$email} - accountRef incoming: {$incoming_ref}, existing: " . ($existing_ref ?: '(none)'), 'DEBUG_SYNC');
              }
         }
 
