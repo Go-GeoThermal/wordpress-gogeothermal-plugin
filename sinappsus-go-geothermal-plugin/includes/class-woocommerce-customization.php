@@ -10,9 +10,9 @@ function ggt_add_delivery_date_field($checkout) {
     }
     
     echo '<div id="ggt_delivery_date_field" class="form-row form-row-wide">';
-    echo '<h3>' . __('Desired Delivery Date') . '</h3>';
-    echo '<p>' . __('Please select your preferred delivery date. Note: Deliveries are not available on weekends, UK public holidays, or within 2 business days from today.') . '</p>';
-    echo '<label for="ggt_delivery_date">' . __('Select your desired delivery date') . ' <abbr class="required" title="required">*</abbr></label>';
+    echo '<h3>' . __('Desired Despatched Date') . '</h3>';
+    echo '<p>' . __('Please select your preferred despatched date. Note: Deliveries are not available on weekends, UK public holidays, or within 2 business days from today.') . '</p>';
+    echo '<label for="ggt_delivery_date">' . __('Select your desired despatched date') . ' <abbr class="required" title="required">*</abbr></label>';
     echo '<input type="text" class="input-text" name="ggt_delivery_date" id="ggt_delivery_date" placeholder="' . __('Click to select a date') . '" required readonly>';
     echo '</div>';
     
