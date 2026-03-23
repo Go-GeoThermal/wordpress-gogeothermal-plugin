@@ -7,9 +7,9 @@ jQuery(document).ready(function($) {
             
             var dateField = `
                 <div id="ggt_delivery_date_field" class="form-row form-row-wide" style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; background: #f8f8f8;">
-                    <h3>Desired Delivery Date</h3>
-                    <p>Please select your preferred delivery date. Note: Deliveries are not available on weekends, UK public holidays, or within 2 business days from today.</p>
-                    <label for="ggt_delivery_date">Select your desired delivery date <abbr class="required" title="required">*</abbr></label>
+                    <h3>Desired Despatched Date</h3>
+                    <p>Please select your preferred despatched date. Note: Deliveries are not available on weekends, UK public holidays, or within 2 business days from today.</p>
+                    <label for="ggt_delivery_date">Select your desired despatched date <abbr class="required" title="required">*</abbr></label>
                     <input type="text" class="input-text" name="ggt_delivery_date" id="ggt_delivery_date" placeholder="Click to select a date" required readonly>
                 </div>
             `;
