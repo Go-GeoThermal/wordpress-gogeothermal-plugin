@@ -191,11 +191,6 @@ function ggt_save_field_mapping() {
         }
     }
     
-    // Log what we received for debugging
-    error_log('GGT Save Mapping - Raw POST: ' . print_r($_POST, true));
-    error_log('GGT Save Mapping - Mapping: ' . print_r($mapping, true));
-    error_log('GGT Save Mapping - Enabled: ' . print_r($enabled_fields, true));
-    
     // Ensure we have arrays
     if (!is_array($mapping)) {
         $mapping = array();
@@ -278,13 +273,6 @@ function ggt_preview_import() {
     }
 
     $selected_env = get_option('ggt_sinappsus_environment', 'production');
-    
-    // Debug: log what we're calling
-    error_log('Preview Import - Environment: ' . $selected_env);
-    error_log('Preview Import - API URL: ' . $api_url);
-    error_log('Preview Import - Token exists: ' . ($token ? 'yes' : 'no'));
-    error_log('Preview Import - Token (first 20 chars): ' . ($token ? substr($token, 0, 20) . '...' : 'none'));
-    error_log('Preview Import - Full URL: ' . $api_url . '/products?limit=10');
 
     $response = wp_remote_get($api_url . '/products?limit=10', array(
         'headers' => array(

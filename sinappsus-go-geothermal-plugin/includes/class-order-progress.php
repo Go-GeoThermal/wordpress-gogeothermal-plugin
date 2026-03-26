@@ -71,9 +71,6 @@ class GGT_Order_Progress {
      * AJAX handler for getting order progress
      */
     public function ajax_get_order_progress() {
-        // Log request for debugging
-        error_log('Order progress AJAX request received: ' . json_encode($_POST));
-        
         // Check for nonce
         if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'ggt_order_progress_nonce')) {
             wp_send_json_error(array('message' => 'Security check failed.'));
