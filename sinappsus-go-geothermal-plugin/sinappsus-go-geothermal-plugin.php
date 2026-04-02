@@ -7,7 +7,7 @@
  * Version: 0.6.4
  * Author: Sinappsus
  * Requires at least: 5.0
- * Tested up to: 6.8
+ * Tested up to: 6.9.4
 */
 
 defined('ABSPATH') || exit;
