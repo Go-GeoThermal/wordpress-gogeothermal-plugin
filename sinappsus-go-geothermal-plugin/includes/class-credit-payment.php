@@ -294,11 +294,12 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             'shipping'       => $order->get_address('shipping'),
             'user_meta'      => $user_meta,
             'items'          => array(),
-            'world_pay'     =>  $order->get_payment_method(),
+            'world_pay'      => $order->get_payment_method(),
             'payment_provider' => $order->get_payment_method(),
             'payment_provider_title' => $order->get_payment_method_title(),
             'delivery_date'  => $formatted_delivery_date,
-            'delivery_address' => $delivery_address // Add delivery address data
+            'delivery_address' => $delivery_address,
+            'customer_note'  => $order->get_customer_note(),
         );
         
         foreach ($order->get_items() as $item_id => $item) {
