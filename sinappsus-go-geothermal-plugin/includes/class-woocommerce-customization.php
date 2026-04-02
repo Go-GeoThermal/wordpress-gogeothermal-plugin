@@ -79,32 +79,18 @@ function ggt_delivery_date_field_footer_fallback() {
 // Fix validation and saving of delivery date
 add_action('woocommerce_checkout_process', 'ggt_validate_delivery_date');
 function ggt_validate_delivery_date() {
-    // Debug logging
-    $debug_post = $_POST;
-    // Remove sensitive data
-    unset($debug_post['payment_method'], $debug_post['woocommerce_checkout_place_order'], $debug_post['_wpnonce']);
-    error_log('GGT Validation: Starting validation. POST keys: ' . implode(', ', array_keys($debug_post)));
-    if (isset($_POST['ggt_delivery_date'])) {
-        error_log('GGT Validation: ggt_delivery_date value: "' . $_POST['ggt_delivery_date'] . '"');
-    } else {
-        error_log('GGT Validation: ggt_delivery_date is NOT set');
-    }
-
     // Check for the delivery date in multiple possible form fields
     $delivery_date = null;
     
     // Prioritize the hidden field which is ISO formatted by JS
     if (!empty($_POST['ggt_delivery_date_hidden'])) {
         $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
-        error_log("GGT Validation: Using hidden field value: '$delivery_date'");
     } elseif (!empty($_POST['ggt_delivery_date'])) {
         $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
-        error_log("GGT Validation: Using main field value: '$delivery_date'");
         
         // Handle UK date format (dd/mm/yyyy) -> convert to d-m-y for strtotime
         if (strpos($delivery_date, '/') !== false) {
             $delivery_date = str_replace('/', '-', $delivery_date);
-            error_log("GGT Validation: Converted UK format to: '$delivery_date'");
         }
     }
     
@@ -120,12 +106,6 @@ function ggt_validate_delivery_date() {
         }
     }
     */
-    
-    if (!empty($delivery_date)) {
-        error_log("GGT Validation: Final delivery_date to validate: '$delivery_date'");
-    } else {
-        error_log("GGT Validation: No delivery date found. Adding error notice.");
-    }
     
     // If no date is found in any field, show error
     if (empty($delivery_date) || $delivery_date === 'undefined' || $delivery_date === 'null') {
@@ -167,8 +147,6 @@ function ggt_validate_delivery_date() {
 // Add modern validation hook as a backup
 add_action('woocommerce_after_checkout_validation', 'ggt_validate_delivery_date_modern', 10, 2);
 function ggt_validate_delivery_date_modern($data, $errors) {
-    error_log('GGT Validation Modern: Starting validation.');
-    
     $delivery_date = null;
     
     // Prioritize the hidden field which is ISO formatted by JS
@@ -235,22 +213,10 @@ function ggt_improved_save_delivery_date($order_id) {
     */
     
     if (!empty($delivery_date)) {
-        // Save using multiple meta keys for compatibility
-        update_post_meta($order_id, 'ggt_delivery_date', $delivery_date);
-        update_post_meta($order_id, '_delivery_date', $delivery_date);
-        update_post_meta($order_id, '_ggt_delivery_date', $delivery_date);
-        update_post_meta($order_id, 'delivery_date', $delivery_date);
-        
-        // Also add it directly to the order object
         $order = wc_get_order($order_id);
         if ($order) {
             $order->update_meta_data('ggt_delivery_date', $delivery_date);
-            $order->update_meta_data('_delivery_date', $delivery_date);
-            $order->update_meta_data('delivery_date', $delivery_date);
             $order->save();
-            
-            // Force the order to include this field in all API responses
-            add_post_meta($order_id, '_delivery_date_included', 'yes', true);
         }
         
         // Clear the session data
@@ -302,7 +268,6 @@ function ggt_add_delivery_date_to_order($order, $data) {
     if (!empty($delivery_date)) {
         // Save the delivery date to the order object directly
         $order->update_meta_data('ggt_delivery_date', $delivery_date);
-        $order->update_meta_data('_delivery_date', $delivery_date);
     }
 }
 
@@ -336,9 +301,9 @@ function ggt_store_selected_delivery_data($order, $data) {
     
     // Store delivery date
     if (!empty($_POST['ggt_delivery_date'])) {
-        $order->update_meta_data('ggt_delivery_date_selected', sanitize_text_field($_POST['ggt_delivery_date']));
+        $order->update_meta_data('ggt_delivery_date', sanitize_text_field($_POST['ggt_delivery_date']));
     } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
-        $order->update_meta_data('ggt_delivery_date_selected', sanitize_text_field($_POST['ggt_delivery_date_hidden']));
+        $order->update_meta_data('ggt_delivery_date', sanitize_text_field($_POST['ggt_delivery_date_hidden']));
     }
 }
 
@@ -347,11 +312,6 @@ add_filter('woocommerce_api_order_response', 'ggt_add_delivery_date_to_api_respo
 function ggt_add_delivery_date_to_api_response($order_data, $order) {
     $order_id = $order->get_id();
     $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
-    
-    // Fallback checks
-    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'ggt_delivery_date_selected', true);
-    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, '_delivery_date', true);
-    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'delivery_date', true);
     
     if (!empty($delivery_date)) {
         $order_data['delivery_date'] = $delivery_date;
@@ -365,17 +325,6 @@ add_action('woocommerce_admin_order_data_after_billing_address', 'ggt_display_de
 function ggt_display_delivery_date_in_admin($order) {
     $order_id = $order->get_id();
     $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
-    
-    // Fallback checks for other meta keys
-    if (empty($delivery_date)) {
-        $delivery_date = get_post_meta($order_id, 'ggt_delivery_date_selected', true);
-    }
-    if (empty($delivery_date)) {
-        $delivery_date = get_post_meta($order_id, '_delivery_date', true);
-    }
-    if (empty($delivery_date)) {
-        $delivery_date = get_post_meta($order_id, 'delivery_date', true);
-    }
 
     if ($delivery_date) {
         $formatted_date = date_i18n(get_option('date_format'), strtotime($delivery_date));
@@ -397,11 +346,6 @@ add_action('woocommerce_email_order_meta', 'ggt_display_delivery_date_on_order_d
 function ggt_display_delivery_date_on_order_details($order) {
     $order_id = $order->get_id();
     $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
-    
-    // Fallback checks
-    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'ggt_delivery_date_selected', true);
-    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, '_delivery_date', true);
-    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'delivery_date', true);
 
     if ($delivery_date) {
         $formatted_date = date_i18n(get_option('date_format'), strtotime($delivery_date));
@@ -418,11 +362,6 @@ function ggt_display_delivery_date_before_order_table($order) {
     // Display prominently at the top of the order details
     $order_id = $order->get_id();
     $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
-    
-    // Fallback checks
-    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'ggt_delivery_date_selected', true);
-    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, '_delivery_date', true);
-    if (empty($delivery_date)) $delivery_date = get_post_meta($order_id, 'delivery_date', true);
 
     if ($delivery_date) {
         $formatted_date = date_i18n(get_option('date_format'), strtotime($delivery_date));
@@ -485,22 +424,9 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
     $user_id = $order->get_user_id();
     $user_meta = get_user_meta($user_id);
     
-    // If delivery date wasn't passed as a parameter or is empty, try all possible meta keys
+    // If delivery date wasn't passed as a parameter or is empty, read from canonical meta key
     if (empty($delivery_date)) {
-        $meta_keys_to_try = [
-            'ggt_delivery_date',
-            '_delivery_date',
-            '_ggt_delivery_date',
-            'delivery_date'
-        ];
-        
-        foreach ($meta_keys_to_try as $key) {
-            $meta_value = get_post_meta($order->get_id(), $key, true);
-            if (!empty($meta_value)) {
-                $delivery_date = $meta_value;
-                break;
-            }
-        }
+        $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
     }
     
     // Also check the session as a last resort
@@ -569,8 +495,6 @@ function ggt_send_order_to_api_endpoint($order, $delivery_date) {
             ],
             'payload' => $order_data,
         ]);
-    } else {
-        error_log('[GGT TEMP PAYLOAD] ' . json_encode($order_data));
     }
     
     foreach ($order->get_items() as $item_id => $item) {
@@ -871,32 +795,8 @@ function ggt_redundant_delivery_date_check() {
     }
 }
 
-// Extra safety for capturing delivery date
-add_action('woocommerce_checkout_create_order', 'ggt_emergency_delivery_date_capture', 1, 2);
-function ggt_emergency_delivery_date_capture($order, $data) {
-    $delivery_date = null;
-    
-    // Check all possible sources in descending priority
-    if (!empty($_POST['ggt_delivery_date'])) {
-        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
-    } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
-        $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
-    } elseif (!empty($_POST['_delivery_date_backup'])) {
-        $delivery_date = sanitize_text_field($_POST['_delivery_date_backup']);
-    } elseif (WC()->session && WC()->session->get('ggt_validated_delivery_date')) {
-        $delivery_date = WC()->session->get('ggt_validated_delivery_date');
-    }
-    
-    if (!empty($delivery_date)) {
-        // Save it immediately so it doesn't get lost
-        $order->update_meta_data('ggt_delivery_date', $delivery_date);
-        $order->update_meta_data('delivery_date', $delivery_date);
-    }
-}
-
 // AJAX handler to update user shipping address in database
 add_action('wp_ajax_ggt_update_user_shipping_address', 'ggt_ajax_update_user_shipping_address');
-add_action('wp_ajax_nopriv_ggt_update_user_shipping_address', 'ggt_ajax_update_user_shipping_address');
 
 function ggt_ajax_update_user_shipping_address() {
     check_ajax_referer('ggt_checkout_nonce', 'nonce');

@@ -26,105 +26,107 @@ add_action('wp_ajax_ggt_users_reset_field_mapping', 'ggt_users_reset_field_mappi
  * Keys match expected API payload keys and registration field names.
  */
 function ggt_get_supported_user_api_fields_with_labels() {
-    // Complete catalog from Laravel customers migration with common synonyms
+    // Labels match exactly what is shown in the middleware Vue UI (TradeAccountsManagement.vue).
+    // Fields commented out are NOT present as form fields in that Vue component.
     return array(
         // Identity/Core
-        'accountRef' => 'Account Reference',
-        'name' => 'Account Name',
-        'customerName' => 'Customer Name',
-        'contactName' => 'Contact Name',
-        'email' => 'Email',
-        'email2' => 'Email 2',
-        'email3' => 'Email 3',
-        'email4' => 'Email 4',
-        'email5' => 'Email 5',
-        'email6' => 'Email 6',
-        'telephone' => 'Telephone',
-        'telephoneNumber' => 'Telephone Number',
-        'telephone2' => 'Telephone 2',
-        'fax' => 'Fax',
-        'www' => 'Website',
-        'webAddress' => 'Web Address',
+        'accountRef'                => 'Account Ref',
+        'name'                      => 'Company Name',
+        'customerName'              => 'Customer Name',
+        'contactName'               => 'Contact Name',
+        'email'                     => 'Account Email',
+        'email2'                    => 'Site Contact Email 01',
+        'email3'                    => 'Site Contact Email 02',
+        'email4'                    => 'Site Contact Email 03',
+        'email5'                    => 'Site Contact Email 04',
+        'email6'                    => 'Accounts Contact Number',
+        // 'telephone'              => 'Telephone',    // Not in Vue form (Vue uses telephoneNumber)
+        'telephoneNumber'           => 'Telephone',
+        'telephone2'                => 'Telephone 2',
+        'fax'                       => 'Fax',
+        // 'www'                    => 'Website',      // Not in Vue form (Vue uses webAddress)
+        'webAddress'                => 'Website',
+        'tradeContact'              => 'Trade Contact',
 
         // Billing/Address
-        'address1' => 'Address 1',
-        'address2' => 'Address 2',
-        'address3' => 'Address 3 (City)',
-        'address4' => 'Address 4 (State/County)',
-        'address5' => 'Address 5 (Postcode)',
-        'countryCode' => 'Country Code',
+        'address1'                  => 'Address Line 1',
+        'address2'                  => 'Address Line 2',
+        'address3'                  => 'Address Line 3',
+        'address4'                  => 'Address Line 4',
+        'address5'                  => 'Postcode',
+        'countryCode'               => 'Country Code of Origin',
 
-        // Delivery/Shipping (include synonyms)
-        'deliveryName' => 'Delivery Name ',
-        'deliveryAddress1' => 'Delivery Address 1 ',
-        'deliveryAddress2' => 'Delivery Address 2 ',
-        'deliveryAddress3' => 'Delivery Address 3 (City) ',
-        'deliveryAddress4' => 'Delivery Address 4 (State/County) ',
-        'deliveryAddress5' => 'Delivery Address 5 (Postcode) ',
-        'delName' => 'Delivery Name',
-        'delAddress1' => 'Delivery Address 1',
-        'delAddress2' => 'Delivery Address 2',
-        'delAddress3' => 'Delivery Address 3 (City)',
-        'delAddress4' => 'Delivery Address 4 (State/County)',
-        'delAddress5' => 'Delivery Address 5 (Postcode)',
+        // Delivery/Shipping (del* keys match Vue form fields; delivery* keys are not in the Vue form)
+        // 'deliveryName'           => 'Delivery Name',      // Not in Vue form (Vue uses delName)
+        // 'deliveryAddress1'       => 'Delivery Address 1', // Not in Vue form (Vue uses delAddress1)
+        // 'deliveryAddress2'       => 'Delivery Address 2', // Not in Vue form
+        // 'deliveryAddress3'       => 'Delivery Address 3', // Not in Vue form
+        // 'deliveryAddress4'       => 'Delivery Address 4', // Not in Vue form
+        // 'deliveryAddress5'       => 'Delivery Address 5', // Not in Vue form
+        'delName'                   => 'Delivery Name',
+        'delAddress1'               => 'Delivery Address 1',
+        'delAddress2'               => 'Delivery Address 2',
+        'delAddress3'               => 'Delivery Address 3',
+        'delAddress4'               => 'Delivery Address 4',
+        'delAddress5'               => 'Delivery Address 5',
 
         // Finance/Tax/Bank
-        'balance' => 'Balance',
-        'currency' => 'Currency',
-        'creditLimit' => 'Credit Limit',
-        'vatRegNumber' => 'VAT Registration Number',
-        'vatNumber' => 'VAT Number ',
-        'eoriNumber' => 'EORI Number',
-        'bacsRef' => 'BACS Reference',
-        'iban' => 'IBAN',
-        'bicSwift' => 'BIC/SWIFT',
-        'rollNumber' => 'Roll Number',
-        'paymentType' => 'Payment Type',
-        'discountRate' => 'Discount Rate',
-        'discountType' => 'Discount Type',
+        'balance'                   => 'Balance',
+        'currency'                  => 'Currency',
+        'creditLimit'               => 'Credit Limit',
+        'vatRegNumber'              => 'VAT Number',
+        // 'vatNumber'              => 'VAT Number', // Not in Vue form (Vue uses vatRegNumber)
+        'eoriNumber'                => 'EORI Number',
+        'bacsRef'                   => 'BACS Reference',
+        'iban'                      => 'IBAN',
+        'bicSwift'                  => 'BIC/SWIFT',
+        'rollNumber'                => 'Roll Number',
+        'paymentType'               => 'Payment Type',
+        'discountRate'              => 'Discount Rate',
+        'discountType'              => 'Discount Type',
 
         // Defaults / Codes
-        'defTaxCode' => 'Default Tax Code',
-        'defNomCode' => 'Default Nominal Code',
+        'defTaxCode'                => 'Default Tax Code',
+        'defNomCode'                => 'Default Nominal Code',
 
         // Terms / Status / Dates
-        'terms' => 'Terms',
-        'termsAgreed' => 'Terms Agreed',
-        'accountOnHold' => 'Account On Hold',
-        'accountStatusText' => 'Account Status Text',
-        'averagePayDays' => 'Average Pay Days',
-        'turnoverYtd' => 'Turnover YTD',
-        'lastPaymentDate' => 'Last Payment Date',
-        'recordCreateDate' => 'Record Create Date',
-        'recordModifyDate' => 'Record Modify Date',
-        'lastDateSynched' => 'Last Date Synched',
-        'inactiveAccount' => 'Inactive Account',
-        'settleDueDays' => 'Settle Due Days',
-        'paymentDueDays' => 'Payment Due Days',
-        'paymentDueFrom' => 'Payment Due From',
-        'creditPosition' => 'Credit Position',
+        'terms'                     => 'Trading Terms Text',
+        'termsAgreed'               => 'Terms Agreed',
+        'accountOnHold'             => 'Account On Hold',
+        'accountStatusText'         => 'Account Status',
+        'averagePayDays'            => 'Average Pay Days',
+        'turnoverYtd'               => 'Turnover YTD',
+        // 'lastPaymentDate'        => 'Last Payment Date',  // Not in Vue form
+        // 'recordCreateDate'       => 'Record Create Date', // Not in Vue form
+        // 'recordModifyDate'       => 'Record Modify Date', // Not in Vue form
+        // 'lastDateSynched'        => 'Last Date Synched',  // Not in Vue form
+        'inactiveAccount'           => 'Inactive Account',
+        'settleDueDays'             => 'Settle Due Days',
+        'paymentDueDays'            => 'Payment Due from',
+        'paymentDueFrom'            => 'Payment Due From',
+        'creditPosition'            => 'Credit Position',
 
         // Misc/Analysis
-        'analysis1' => 'Analysis 1',
-        'analysis2' => 'Analysis 2',
-        'analysis3' => 'Analysis 3',
-        'analysis4' => 'Analysis 4',
-        'analysis5' => 'Analysis 5',
-        'analysis6' => 'Analysis 6',
-        'deptNumber' => 'Department Number',
-        'priceListRef' => 'Price List Reference',
-        'tradeContact' => 'Trade Contact',
+        'analysis1'                 => 'Cust. Type',
+        'analysis2'                 => 'Resp. Rep',
+        'analysis3'                 => 'Region',
+        'analysis4'                 => 'Analysis 4',
+        'analysis5'                 => 'Analysis 5',
+        'analysis6'                 => 'Analysis 6',
+        'deptNumber'                => 'Department Number',
+        'priceListRef'              => 'Price List Reference',
         'companyRegistrationNumber' => 'Company Registration Number',
-        'sendInvoicesElectronically' => 'Send Invoices Electronically',
-        'sendLettersElectronically' => 'Send Letters Electronically',
-        'memo' => 'Memo',
-        'additionalRef1' => 'Additional Reference 1',
-        'additionalRef2' => 'Additional Reference 2',
-        'additionalRef3' => 'Additional Reference 3',
-        // Bank details split (synonyms/structure)
-        'bankAccountName' => 'Bank Account Name',
-        'bankSortCode' => 'Bank Sort Code',
-        'bankAccountNumber' => 'Bank Account Number',
+        // 'sendInvoicesElectronically' => 'Send Invoices Electronically', // No dedicated form field in Vue (value derived from sendLettersElectronically)
+        'sendLettersElectronically' => 'Send invoices electronically or by mail',
+        'memo'                      => 'Memo',
+        'additionalRef1'            => 'Additional Ref 1',
+        'additionalRef2'            => 'Additional Ref 2',
+        'additionalRef3'            => 'Additional Ref 3',
+
+        // Bank details (panel exists in Vue but is hidden via display:none)
+        'bankAccountName'           => 'Bank Account Name',
+        'bankSortCode'              => 'Bank Sort Code',
+        'bankAccountNumber'         => 'Bank Account Number',
     );
 }
 

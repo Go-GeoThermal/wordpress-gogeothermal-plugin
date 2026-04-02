@@ -124,27 +124,6 @@ function ggt_flush_rewrite_rules_flag() {
     add_option('ggt_flush_rewrite_rules', true);
 }
 
-/**
- * Get the base API URL based on the selected environment
- * @return string The base API URL
- */
-function ggt_get_api_base_url() {
-    global $environments;
-    $selected_env = get_option('ggt_sinappsus_environment', 'production');
-    
-    if (isset($environments[$selected_env]) && isset($environments[$selected_env]['api_url'])) {
-        return $environments[$selected_env]['api_url'];
-    }
-    
-    // Fallback to constant if available, otherwise production
-    if (defined('GGT_SINAPPSUS_API_URL')) {
-        return GGT_SINAPPSUS_API_URL;
-    }
-
-    // Default to production if environment not found and constant not defined
-    return "https://api.gogeothermal.uk/api";
-}
-
 // Add debugging for delivery date and address features
 add_action('wp_footer', 'ggt_debug_checkout_data', 100);
 function ggt_debug_checkout_data() {
@@ -168,13 +147,6 @@ function ggt_debug_checkout_data() {
         // Monitor form submission
         $('form.checkout').on('submit', function(e) {
             console.log('🔍 [GGT DEBUG] Form submitted with delivery date:', $('#ggt_delivery_date').val());
-            
-            // Add delivery date as hidden field one more time to be extra sure
-            if (!$('input[name="ggt_delivery_date_hidden"]').length) {
-                $(this).append('<input type="hidden" name="ggt_delivery_date_hidden" value="' + $('#ggt_delivery_date').val() + '">');
-            } else {
-                $('input[name="ggt_delivery_date_hidden"]').val($('#ggt_delivery_date').val());
-            }
         });
     });
     </script>

@@ -103,15 +103,8 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
 
         // Comprehensive check for delivery date from multiple sources
         $delivery_date = null;
-        $meta_keys_to_try = ['ggt_delivery_date', '_delivery_date', '_ggt_delivery_date', 'delivery_date'];
         
-        foreach ($meta_keys_to_try as $key) {
-            $meta_value = get_post_meta($order_id, $key, true);
-            if (!empty($meta_value)) {
-                $delivery_date = $meta_value;
-                break;
-            }
-        }
+        $delivery_date = get_post_meta($order_id, 'ggt_delivery_date', true);
         
         // Check POST data if no date found in meta
         if (empty($delivery_date)) {
@@ -119,30 +112,18 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
                 $delivery_date = sanitize_text_field($_POST['ggt_delivery_date']);
             } elseif (!empty($_POST['ggt_delivery_date_hidden'])) {
                 $delivery_date = sanitize_text_field($_POST['ggt_delivery_date_hidden']);
-            } else {
-                // Last attempt - check any POST field with delivery_date in the name
-                foreach ($_POST as $key => $value) {
-                    if (strpos($key, 'delivery_date') !== false && !empty($value)) {
-                        $delivery_date = sanitize_text_field($value);
-                        break;
-                    }
-                }
             }
             
-            // If found in POST, save it to all possible meta keys
+            // If found in POST, save it to canonical meta key
             if (!empty($delivery_date)) {
-                foreach ($meta_keys_to_try as $key) {
-                    update_post_meta($order_id, $key, $delivery_date);
-                }
+                update_post_meta($order_id, 'ggt_delivery_date', $delivery_date);
             }
         }
         
         // Also check session as last resort
         if (empty($delivery_date) && WC()->session && WC()->session->get('ggt_validated_delivery_date')) {
             $delivery_date = WC()->session->get('ggt_validated_delivery_date');
-            foreach ($meta_keys_to_try as $key) {
-                update_post_meta($order_id, $key, $delivery_date);
-            }
+            update_post_meta($order_id, 'ggt_delivery_date', $delivery_date);
         }
 
         // Try different meta keys where credit limit might be stored
@@ -286,85 +267,10 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         $user_id = $order->get_user_id();
         $user_meta = get_user_meta($user_id);
         
-        // EVEN MORE aggressive delivery date checking
-        $all_possible_sources = [
-            // Meta keys checked in order of priority
-            'get_meta' => [
-                'ggt_delivery_date',
-                'delivery_date', 
-                '_delivery_date',
-                '_ggt_delivery_date',
-                'ggt_delivery_date_selected'
-            ],
-            
-            // POST fields checked in order of priority
-            'post' => [
-                'ggt_delivery_date', 
-                'ggt_delivery_date_hidden', 
-                '_delivery_date_backup'
-            ],
-            
-            // Session keys checked in order of priority
-            'session' => [
-                'ggt_validated_delivery_date'
-            ],
-            
-            // Try any other meta keys that might contain "delivery" and "date"
-            'search_meta' => true
-        ];
-        
+        // Read delivery date from canonical meta key
+        $delivery_date = $order->get_meta('ggt_delivery_date', true);
         if (empty($delivery_date)) {
-            // Check meta keys
-            foreach ($all_possible_sources['get_meta'] as $key) {
-                $value = $order->get_meta($key);
-                if (!empty($value)) {
-                    $delivery_date = $value;
-                    break;
-                }
-            }
-            
-            // Check POST data
-            if (empty($delivery_date)) {
-                foreach ($all_possible_sources['post'] as $key) {
-                    if (!empty($_POST[$key])) {
-                        $delivery_date = sanitize_text_field($_POST[$key]);
-                        break;
-                    }
-                }
-            }
-            
-            // Check session
-            if (empty($delivery_date) && WC()->session) {
-                foreach ($all_possible_sources['session'] as $key) {
-                    $value = WC()->session->get($key);
-                    if (!empty($value)) {
-                        $delivery_date = $value;
-                        break;
-                    }
-                }
-            }
-            
-            // Search any meta keys containing both "delivery" and "date"
-            if (empty($delivery_date) && $all_possible_sources['search_meta']) {
-                $order_meta = get_post_meta($order->get_id());
-                foreach ($order_meta as $key => $values) {
-                    if (stripos($key, 'delivery') !== false && stripos($key, 'date') !== false) {
-                        $delivery_date = is_array($values) ? reset($values) : $values;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // If still no date, use today + 3 days as fallback
-        if (empty($delivery_date)) {
-            $delivery_date = date('Y-m-d', strtotime('+3 days'));
-            
-            // Save this fallback date to the order
-            $order->update_meta_data('ggt_delivery_date', $delivery_date);
-            $order->update_meta_data('delivery_date', $delivery_date);
-            $order->update_meta_data('ggt_delivery_date_fallback', 'true');
-            $order->save();
+            $delivery_date = get_post_meta($order->get_id(), 'ggt_delivery_date', true);
         }
 
         $formatted_delivery_date = $delivery_date ? date('Y-m-d', strtotime($delivery_date)) : null;
@@ -388,11 +294,12 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
             'shipping'       => $order->get_address('shipping'),
             'user_meta'      => $user_meta,
             'items'          => array(),
-            'world_pay'     =>  $order->get_payment_method(),
+            'world_pay'      => $order->get_payment_method(),
             'payment_provider' => $order->get_payment_method(),
             'payment_provider_title' => $order->get_payment_method_title(),
             'delivery_date'  => $formatted_delivery_date,
-            'delivery_address' => $delivery_address // Add delivery address data
+            'delivery_address' => $delivery_address,
+            'customer_note'  => $order->get_customer_note(),
         );
         
         foreach ($order->get_items() as $item_id => $item) {
@@ -455,14 +362,7 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
 
     private function get_token()
     {
-        if (function_exists('ggt_get_decrypted_token')) {
-            return ggt_get_decrypted_token();
-        }
-        $encrypted_token = get_option('sinappsus_gogeo_codex');
-        if ($encrypted_token) {
-            return openssl_decrypt($encrypted_token, 'aes-256-cbc', AUTH_KEY, 0, AUTH_SALT);
-        }
-        return false;
+        return function_exists('ggt_get_decrypted_token') ? ggt_get_decrypted_token() : false;
     }
 }
 

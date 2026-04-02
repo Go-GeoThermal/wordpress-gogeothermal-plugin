@@ -168,8 +168,11 @@ if (!function_exists('ggt_get_api_base_url')) {
             return $environments[$selected_env]['api_url'];
         }
         
-        // Default to production if environment not found
-        return $environments['production']['api_url'];
+        if (defined('GGT_SINAPPSUS_API_URL')) {
+            return GGT_SINAPPSUS_API_URL;
+        }
+        
+        return isset($environments['production']['api_url']) ? $environments['production']['api_url'] : 'https://api.gogeothermal.uk/api';
     }
 }
 

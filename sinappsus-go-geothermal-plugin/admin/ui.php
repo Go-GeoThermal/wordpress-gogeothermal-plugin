@@ -222,10 +222,11 @@ class Sinappsus_GGT_Admin_UI
                         <p>No product field mapping configured yet.</p>
                     <?php else: ?>
                         <div style="overflow-x:auto;">
+                            <?php $prod_ui_labels = ggt_get_middleware_ui_product_field_labels(); ?>
                             <table class="wp-list-table widefat fixed striped" style="min-width:600px;">
                                 <thead>
                                     <tr>
-                                        <th>API Field</th>
+                                        <th>Middleware Field</th>
                                         <th>Mapped To (WooCommerce)</th>
                                         <th>Status</th>
                                     </tr>
@@ -233,9 +234,13 @@ class Sinappsus_GGT_Admin_UI
                                 <tbody>
                                     <?php foreach ($prod_mapping as $api_field => $wc_field): 
                                         $is_enabled = !isset($prod_enabled[$api_field]) || (bool)$prod_enabled[$api_field];
+                                        $ui_label   = isset($prod_ui_labels[$api_field]) ? $prod_ui_labels[$api_field] : $api_field;
                                     ?>
                                         <tr>
-                                            <td><code><?php echo esc_html($api_field); ?></code></td>
+                                            <td>
+                                                <strong><?php echo esc_html($ui_label); ?></strong>
+                                                <br><code style="font-size:11px;color:#666;"><?php echo esc_html($api_field); ?></code>
+                                            </td>
                                             <td><?php echo esc_html($wc_field); ?></td>
                                             <td><?php echo $is_enabled ? '<span style="color:green;">Enabled</span>' : '<span style="color:#666;">Disabled</span>'; ?></td>
                                         </tr>
@@ -290,10 +295,11 @@ class Sinappsus_GGT_Admin_UI
                         <p>No user/account field mapping configured yet.</p>
                     <?php else: ?>
                         <div style="overflow-x:auto;">
+                            <?php $usr_ui_labels = ggt_get_supported_user_api_fields_with_labels(); ?>
                             <table class="wp-list-table widefat fixed striped" style="min-width:600px;">
                                 <thead>
                                     <tr>
-                                        <th>API Field</th>
+                                        <th>Middleware Field</th>
                                         <th>Mapped To (User Meta / Field)</th>
                                         <th>Status</th>
                                     </tr>
@@ -301,9 +307,13 @@ class Sinappsus_GGT_Admin_UI
                                 <tbody>
                                     <?php foreach ($usr_mapping as $api_field => $target): 
                                         $is_enabled = !isset($usr_enabled[$api_field]) || (bool)$usr_enabled[$api_field];
+                                        $ui_label   = isset($usr_ui_labels[$api_field]) ? $usr_ui_labels[$api_field] : $api_field;
                                     ?>
                                         <tr>
-                                            <td><code><?php echo esc_html($api_field); ?></code></td>
+                                            <td>
+                                                <strong><?php echo esc_html($ui_label); ?></strong>
+                                                <br><code style="font-size:11px;color:#666;"><?php echo esc_html($api_field); ?></code>
+                                            </td>
                                             <td><?php echo esc_html(is_array($target) ? json_encode($target) : $target); ?></td>
                                             <td><?php echo $is_enabled ? '<span style="color:green;">Enabled</span>' : '<span style="color:#666;">Disabled</span>'; ?></td>
                                         </tr>
@@ -564,6 +574,10 @@ class Sinappsus_GGT_Admin_UI
                 </div>
 
         <script type="text/javascript">
+            // Middleware UI field label maps (generated from PHP — match exactly what is shown in the middleware Vue UI)
+            const ggtProductFieldLabels = <?php echo wp_json_encode( ggt_get_middleware_ui_product_field_labels() ); ?>;
+            const ggtUserFieldLabels    = <?php echo wp_json_encode( ggt_get_supported_user_api_fields_with_labels() ); ?>;
+
             document.addEventListener('DOMContentLoaded', function() {
                 // --- Simple tab navigation ---
                 (function(){
@@ -1135,7 +1149,8 @@ class Sinappsus_GGT_Admin_UI
                         jQuery.post(ajaxurl, { action: 'ggt_users_get_field_mapping' })
                     ]).then(([apiRes, targetsRes, mapRes]) => {
                         if (apiRes.success) {
-                            userAvailableApiFields = apiRes.data.map(item => item.key);
+                            // Store full {key, label} objects so the mapping table shows friendly labels
+                            userAvailableApiFields = apiRes.data;
                         }
                         if (targetsRes.success) {
                             userAvailableTargets = targetsRes.data;
@@ -1166,19 +1181,22 @@ class Sinappsus_GGT_Admin_UI
                 function renderUserFieldMapping() {
                     let html = '<table class="wp-list-table widefat fixed"><thead><tr>' +
                                '<th style="width:10%;">Enable</th>' +
-                               '<th style="width:30%;">API Field</th>' +
+                               '<th style="width:30%;">Middleware Field</th>' +
                                '<th style="width:30%;">Target Field</th>' +
                                '<th style="width:20%;">Custom Label</th>' +
                                '<th style="width:10%;">Action</th>' +
                                '</tr></thead><tbody>';
 
-                    userAvailableApiFields.forEach(apiField => {
-                        const mappedTo = userCurrentMapping[apiField] || '';
-                        const isEnabled = userEnabledFields[apiField] !== false; // default true
+                    userAvailableApiFields.forEach(fieldObj => {
+                        // fieldObj is {key, label} from the PHP AJAX response
+                        const apiField   = fieldObj.key;
+                        const uiLabel    = fieldObj.label || ggtUserFieldLabels[apiField] || apiField;
+                        const mappedTo   = userCurrentMapping[apiField] || '';
+                        const isEnabled  = userEnabledFields[apiField] !== false; // default true
                         const customLabel = userCustomLabels[apiField] || '';
                         html += '<tr>' +
                                 '<td style="text-align:center;"><input type="checkbox" class="user-field-enabled" data-api-field="' + apiField + '" ' + (isEnabled ? 'checked' : '') + '></td>' +
-                                '<td><strong>' + apiField + '</strong></td>' +
+                                '<td><strong>' + uiLabel + '</strong><br><code style="font-size:11px;color:#666;">' + apiField + '</code></td>' +
                                 '<td><select class="user-field-mapping" data-api-field="' + apiField + '" style="width:100%">' +
                                 '<option value="">-- Not Mapped --</option>';
                         let currentGroup = '';
@@ -1237,12 +1255,12 @@ class Sinappsus_GGT_Admin_UI
 
                 const userEnableAllBtn = document.getElementById('user-enable-all');
                 if (userEnableAllBtn) userEnableAllBtn.addEventListener('click', function(){
-                    userAvailableApiFields.forEach(k => userEnabledFields[k] = true);
+                    userAvailableApiFields.forEach(f => userEnabledFields[f.key] = true);
                     renderUserFieldMapping();
                 });
                 const userDisableAllBtn = document.getElementById('user-disable-all');
                 if (userDisableAllBtn) userDisableAllBtn.addEventListener('click', function(){
-                    userAvailableApiFields.forEach(k => userEnabledFields[k] = false);
+                    userAvailableApiFields.forEach(f => userEnabledFields[f.key] = false);
                     renderUserFieldMapping();
                 });
                 const userSaveBtn = document.getElementById('user-save-mapping');
@@ -1356,18 +1374,20 @@ class Sinappsus_GGT_Admin_UI
                 function renderFieldMapping() {
                     let html = '<table class="wp-list-table widefat fixed"><thead><tr>';
                     html += '<th style="width:5%;">Enable</th>';
-                    html += '<th style="width:35%;">API Field</th>';
+                    html += '<th style="width:35%;">Middleware Field</th>';
                     html += '<th style="width:40%;">WooCommerce Field</th>';
                     html += '<th style="width:20%;">Action</th>';
                     html += '</tr></thead><tbody>';
                     
                     availableAPIFields.forEach(apiField => {
-                        let mappedTo = currentMapping[apiField] || '';
+                        let mappedTo  = currentMapping[apiField] || '';
                         let isEnabled = enabledFields[apiField] !== false;
+                        // Look up the friendly middleware UI label; fall back to the raw key
+                        let uiLabel   = ggtProductFieldLabels[apiField] || apiField;
                         
                         html += '<tr>';
                         html += '<td style="text-align:center;"><input type="checkbox" class="field-enabled-checkbox" data-api-field="' + apiField + '" ' + (isEnabled ? 'checked' : '') + '></td>';
-                        html += '<td><strong>' + apiField + '</strong></td>';
+                        html += '<td><strong>' + uiLabel + '</strong><br><code style="font-size:11px;color:#666;">' + apiField + '</code></td>';
                         html += '<td><select class="field-mapping-select" data-api-field="' + apiField + '" style="width:100%;">';
                         html += '<option value="">-- Not Mapped --</option>';
                         

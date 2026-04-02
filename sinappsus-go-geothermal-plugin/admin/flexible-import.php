@@ -39,6 +39,90 @@ add_action('wp_ajax_ggt_execute_flexible_import', 'ggt_execute_flexible_import')
 add_action('wp_ajax_ggt_process_related_products', 'ggt_process_related_products');
 
 /**
+ * Returns a map of middleware API product field keys to the human-readable labels
+ * shown in the middleware Vue UI (ProductManagement.vue).
+ * Used to display friendly field names in the WordPress plugin mapping screens.
+ *
+ * @return array  Key => UI label pairs matching ProductManagement.vue label attributes.
+ */
+function ggt_get_middleware_ui_product_field_labels() {
+    // Labels match exactly what is shown in the middleware Vue UI (ProductManagement.vue).
+    // Fields commented out are NOT present as form fields in that Vue component.
+    return array(
+        // Basic Information
+        'stockCode'              => 'Product Code',
+        'description'            => 'Description',
+        'itemType'               => 'Item Type',
+        'salesNominalCode'       => 'Nominal Code',
+        // 'nominalCode'         => 'Nominal Code',         // Not in Vue form (Vue uses salesNominalCode)
+        'custom1'                => 'Custom Field 1',
+        'custom2'                => 'Custom Field 2',
+        'custom3'                => 'Custom Field 3',
+        'instrastatCommCode'     => 'Intrastat Comm Code',
+        // 'intrastatCommCode'   => 'Intrastat Comm Code',  // Not in Vue form (Vue spells it instrastatCommCode)
+        'commodityCode'          => 'Commodity Code',
+        'reorderLevel'           => 'Reorder Level',
+        'reorderQty'             => 'Reorder Quantity',
+        'deptNumber'             => 'Department Number',
+        // 'unitOfSale'          => 'Unit of Sale',         // Commented out in Vue form HTML
+
+        // Pricing & Stock
+        'salesPrice'             => 'Sales Price',
+        'unitWeight'             => 'Unit Weight',
+        'taxCode'                => 'Tax Code',
+        'qtyInStock'             => 'Quantity in Stock',
+        'qtyAllocated'           => 'Quantity Allocated',
+        // 'qtyOnOrder'          => 'Quantity on Order',        // Not in Vue form
+        'stockCat'               => 'Stock Category',
+        // 'averageCostPrice'    => 'Average Cost Price',       // Not in Vue form
+        // 'lastPurchasePrice'   => 'Last Purchase Price',      // Not in Vue form
+        // 'lastCostPrice'       => 'Last Cost Price',          // Not in Vue form
+        // 'lastDiscPurchasePrice' => 'Last Disc Purchase Price', // Not in Vue form
+        // 'purchaseNominalCode' => 'Purchase Nominal Code',    // Not in Vue form
+        // 'stockTakeDate'       => 'Stock Take Date',          // Not in Vue form
+        'location'               => 'Location',
+
+        // Web Information
+        'webCategoryA'           => 'Web Category A',
+        'webCategoryB'           => 'Web Category B',
+        'webCategoryC'           => 'Web Category C',
+        'barcode'                => 'Barcode',
+        'gtin'                   => 'GTIN',
+        'own'                    => 'Own',
+        'ean'                    => 'EAN',
+        'link_to_product'        => 'Link to Product',
+        'brand'                  => 'Brand',
+        'category'               => 'Category',
+        'product_grid_content'   => 'Product Grid Content',
+        'webPublish'             => 'Web Publish',
+        'webSpecialOffer'        => 'Web Special Offer',
+        'webDetails'             => 'Web Details',
+        'webDescription'         => 'Web Description',
+        // 'webImage'            => 'Web Image',               // Not in Vue form (Vue uses file upload / image_path)
+        'RelatedProducts'        => 'Related Products',
+        'image_path'             => 'Product Image',
+        // 'content'             => 'Content',                 // Not in Vue form
+
+        // Additional Details
+        'assemblyLevel'          => 'Assembly Level',
+        'countryCodeOfOrigin'    => 'Country Code of Origin',
+        'shipping_class'         => 'Shipping Class',
+        // 'supplierPartNumber'  => 'Supplier Part Number',    // Not in Vue form
+        // 'supplierRef'         => 'Supplier Ref',            // Not in Vue form
+        // 'scop'                => 'SCOP',                    // Not in Vue form
+        // 'output'              => 'Output',                  // Not in Vue form
+        // 'energy_rating'       => 'Energy Rating',           // Not in Vue form
+        // 'phase'               => 'Phase',                   // Not in Vue form
+
+        // Flags
+        // 'deletedFlag'         => 'Deleted Flag',            // Not in Vue form
+        'inactiveFlag'           => 'Inactive Flag',
+        // 'recordCreateDate'    => 'Record Create Date',      // Not in Vue form
+        // 'recordModifyDate'    => 'Record Modify Date',      // Not in Vue form
+    );
+}
+
+/**
  * Get all available WooCommerce fields that can be mapped to
  */
 function ggt_get_available_fields() {
@@ -191,11 +275,6 @@ function ggt_save_field_mapping() {
         }
     }
     
-    // Log what we received for debugging
-    error_log('GGT Save Mapping - Raw POST: ' . print_r($_POST, true));
-    error_log('GGT Save Mapping - Mapping: ' . print_r($mapping, true));
-    error_log('GGT Save Mapping - Enabled: ' . print_r($enabled_fields, true));
-    
     // Ensure we have arrays
     if (!is_array($mapping)) {
         $mapping = array();
@@ -278,13 +357,6 @@ function ggt_preview_import() {
     }
 
     $selected_env = get_option('ggt_sinappsus_environment', 'production');
-    
-    // Debug: log what we're calling
-    error_log('Preview Import - Environment: ' . $selected_env);
-    error_log('Preview Import - API URL: ' . $api_url);
-    error_log('Preview Import - Token exists: ' . ($token ? 'yes' : 'no'));
-    error_log('Preview Import - Token (first 20 chars): ' . ($token ? substr($token, 0, 20) . '...' : 'none'));
-    error_log('Preview Import - Full URL: ' . $api_url . '/products?limit=10');
 
     $response = wp_remote_get($api_url . '/products?limit=10', array(
         'headers' => array(

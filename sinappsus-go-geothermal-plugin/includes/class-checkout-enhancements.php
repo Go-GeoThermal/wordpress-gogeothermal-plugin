@@ -15,13 +15,10 @@ class GGT_Checkout_Enhancements {
         
         // Register AJAX handlers (kept for backwards compatibility; pricing is now handled globally by GGT_Customer_Pricing)
         add_action('wp_ajax_ggt_fetch_customer_pricing', array($this, 'ajax_fetch_customer_pricing'));
-        add_action('wp_ajax_nopriv_ggt_fetch_customer_pricing', array($this, 'ajax_fetch_customer_pricing'));
         
         add_action('wp_ajax_ggt_update_cart_prices', array($this, 'ajax_update_cart_prices'));
-        add_action('wp_ajax_nopriv_ggt_update_cart_prices', array($this, 'ajax_update_cart_prices'));
         
         add_action('wp_ajax_ggt_fetch_delivery_addresses', array($this, 'ajax_fetch_delivery_addresses'));
-        add_action('wp_ajax_nopriv_ggt_fetch_delivery_addresses', array($this, 'ajax_fetch_delivery_addresses'));
         
         // AJAX handler to refresh pricing cache
         add_action('wp_ajax_ggt_refresh_customer_pricing_cache', array($this, 'ajax_refresh_pricing_cache'));
