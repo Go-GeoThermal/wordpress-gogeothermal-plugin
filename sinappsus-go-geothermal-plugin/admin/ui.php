@@ -182,6 +182,10 @@ class Sinappsus_GGT_Admin_UI
 
             <div id="ggt-tab-products" class="ggt-tab-panel" style="display:none;">
                 <h2>Product Actions</h2>
+                <?php
+                    $prod_mapping = get_option('ggt_product_field_mapping', array());
+                    $prod_enabled = get_option('ggt_product_field_mapping_enabled', array());
+                ?>
                 <?php if (!$plugin_enabled): ?>
                     <div class="notice notice-warning"><p>The plugin is currently disabled. Enable it on the Dashboard tab to unlock product actions.</p></div>
                 <?php endif; ?>
@@ -196,10 +200,12 @@ class Sinappsus_GGT_Admin_UI
                     <button type="button" id="configure-import-button" class="button button-primary" <?php disabled(!$token_exists || !$plugin_enabled); ?>>Configure Field Mapping</button>
                     <p class="description">Map API fields to WooCommerce product fields before importing.</p>
                 </div>
-                <div class="action-item" style="display: none;">
-                    <button type="button" id="sync-products-button" class="button" <?php disabled(!$token_exists || !$plugin_enabled); ?>>Sync All Products</button>
-                    <p class="description">Fetch products from API, updating existing by Stock Code or SKU and creating new ones if active.</p>
+                <?php if (!empty($prod_mapping)): ?>
+                <div class="action-item">
+                    <button type="button" id="sync-products-button" class="button button-secondary" <?php disabled(!$token_exists || !$plugin_enabled); ?>>Sync All Products</button>
+                    <p class="description">Fetch products from API, updating existing by Stock Code or SKU and creating new ones if active, using the saved mapping.</p>
                 </div>
+                <?php endif; ?>
                 <!-- Progress container for sync process -->
                 <div id="sync-progress-container" style="display:none; margin-top: 15px;">
                     <div class="sync-status-message"></div>
@@ -208,16 +214,12 @@ class Sinappsus_GGT_Admin_UI
                     </div>
                     <div class="sync-details">
                         <span class="sync-count">0</span> / <span class="sync-total">0</span> products processed
-                        (<span class="sync-success-count">0</span> updated, <span class="sync-skip-count">0</span> skipped)
+                        (<span class="sync-success-count">0</span> imported, <span class="sync-skip-count">0</span> skipped)
                     </div>
                 </div>
 
                 <div class="card" style="margin-top:20px; max-width:1000px;">
                     <h3>Current Product Field Mapping</h3>
-                    <?php 
-                        $prod_mapping = get_option('ggt_product_field_mapping', array());
-                        $prod_enabled = get_option('ggt_product_field_mapping_enabled', array());
-                    ?>
                     <?php if (empty($prod_mapping)): ?>
                         <p>No product field mapping configured yet.</p>
                     <?php else: ?>
@@ -932,160 +934,106 @@ class Sinappsus_GGT_Admin_UI
                     }
                 });
 
-                document.getElementById('sync-products-button').addEventListener('click', function() {
-                    // Reset counters and show progress container
-                    let successCount = 0;
-                    let skipCount = 0;
-                    
-                    document.getElementById('message').innerText = 'Initializing product synchronization...';
-                    document.getElementById('sync-progress-container').style.display = 'block';
-                    document.querySelector('.sync-status-message').innerText = 'Connecting to API...';
-                    document.querySelector('.progress-bar').style.width = '0%';
-                    document.querySelector('.sync-count').innerText = '0';
-                    document.querySelector('.sync-success-count').innerText = '0';
-                    document.querySelector('.sync-skip-count').innerText = '0';
+                const syncProductsButton = document.getElementById('sync-products-button');
+                if (syncProductsButton) {
+                    syncProductsButton.addEventListener('click', function() {
+                        const limit = 50;
+                        let page = 1;
+                        let total = 0;
+                        let imported = 0;
+                        let created = 0;
+                        let updated = 0;
+                        let skipped = 0;
+                        let errors = [];
 
-                    getToken().then(token => {
-                        document.querySelector('.sync-status-message').innerText = 'Fetching products from API...';
-                        
-                        fetch('<?php echo $this->api_url; ?>/products', {
-                                method: 'GET',
-                                headers: {
-                                    'Authorization': 'Bearer ' + token,
-                                    'Content-Type': 'application/json'
+                        document.getElementById('message').innerText = 'Initializing product import...';
+                        document.getElementById('sync-progress-container').style.display = 'block';
+                        document.querySelector('.sync-status-message').innerText = 'Preparing import...';
+                        document.querySelector('.progress-bar').style.width = '0%';
+                        document.querySelector('.sync-count').innerText = '0';
+                        document.querySelector('.sync-total').innerText = '0';
+                        document.querySelector('.sync-success-count').innerText = '0';
+                        document.querySelector('.sync-skip-count').innerText = '0';
+
+                        function updateProgress() {
+                            const processed = imported + skipped;
+                            const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+                            document.querySelector('.progress-bar').style.width = percent + '%';
+                            document.querySelector('.sync-count').innerText = processed;
+                            document.querySelector('.sync-total').innerText = total;
+                            document.querySelector('.sync-success-count').innerText = imported;
+                            document.querySelector('.sync-skip-count').innerText = skipped;
+                        }
+
+                        function finishSync() {
+                            document.querySelector('.sync-status-message').innerText = 'Product import complete!';
+                            document.getElementById('message').innerText = 'Products imported. Created: ' + created + ', Updated: ' + updated + ', Skipped: ' + skipped;
+
+                            setTimeout(function() {
+                                document.getElementById('sync-progress-container').style.display = 'none';
+                            }, 20000);
+                        }
+
+                        function runImportBatch() {
+                            document.querySelector('.sync-status-message').innerText = 'Importing page ' + page + '...';
+
+                            jQuery.post(ajaxurl, {
+                                action: 'ggt_execute_flexible_import',
+                                page: page,
+                                limit: limit
+                            }).done(function(response) {
+                                if (!response.success || !response.data) {
+                                    document.querySelector('.sync-status-message').innerText = 'Error during import';
+                                    document.getElementById('message').innerText = 'Import failed on page ' + page + ': ' + (response.data || 'Unknown error');
+                                    return;
                                 }
-                            })
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data && Array.isArray(data)) {
-                                    // First, get all existing products
-                                    document.querySelector('.sync-status-message').innerText = 'Analyzing existing products...';
-                                    
-                                    jQuery.post(ajaxurl, {
-                                        action: 'get_all_products'
-                                    }).done(function(existingProducts) {
-                                        let existingByStockCode = {};
-                                        let existingBySku = {};
-                                        if (existingProducts.success && Array.isArray(existingProducts.data)) {
-                                            // Create lookup maps for faster checking - one for stockCode and one for SKU
-                                            existingProducts.data.forEach(product => {
-                                                if (product.stockCode) {
-                                                    existingByStockCode[product.stockCode] = product.id;
-                                                }
-                                                if (product.sku) {
-                                                    existingBySku[product.sku] = product.id;
-                                                }
-                                            });
-                                        }
 
-                                        let processed = 0;
-                                        let total = data.length;
-                                        document.querySelector('.sync-status-message').innerText = 'Starting synchronization of ' + total + ' products...';
-                                        document.querySelector('.sync-total').innerText = total;
+                                created += (response.data.created || 0);
+                                updated += (response.data.updated || 0);
+                                skipped += (response.data.skipped || 0);
+                                imported = created + updated;
 
-                                        // Process each product sequentially to avoid overwhelming the server
-                                        function processNextProduct(index) {
-                                            if (index >= data.length) {
-                                                document.querySelector('.sync-status-message').innerText = 'Synchronization complete!';
-                                                document.getElementById('message').innerText = 'Products synchronized successfully! Updated: ' + 
-                                                    successCount + ', Skipped: ' + skipCount;
-                                                // Store summary for dashboard
-                                                jQuery.post(ajaxurl, {
-                                                    action: 'ggt_store_last_product_sync',
-                                                    updated: successCount,
-                                                    skipped: skipCount,
-                                                    total: total
-                                                });
-                                                
-                                                // Hide the progress container after 20 seconds
-                                                setTimeout(function() {
-                                                    document.getElementById('sync-progress-container').style.display = 'none';
-                                                }, 20000);
-                                                return;
-                                            }
+                                if (response.data.errors && Array.isArray(response.data.errors)) {
+                                    errors = errors.concat(response.data.errors);
+                                }
 
-                                            let product_data = data[index];
-                                            if (!product_data.stockCode) {
-                                                processed++;
-                                                skipCount++;
-                                                document.querySelector('.sync-skip-count').innerText = skipCount;
-                                                document.querySelector('.sync-status-message').innerText = 'Skipping product with no stock code...';
-                                                updateProgress(processed, total);
-                                                processNextProduct(index + 1);
-                                                return;
-                                            }
+                                updateProgress();
 
-                                            // Check if the product exists by stockCode or SKU
-                                            let existingProductId = existingByStockCode[product_data.stockCode] ||
-                                                (product_data.sku ? existingBySku[product_data.sku] : null);
-
-                                            if (existingProductId) {
-                                                // Update existing product
-                                                document.querySelector('.sync-status-message').innerText = 'Updating: ' + (product_data.title || product_data.stockCode);
-                                                jQuery.post(ajaxurl, {
-                                                    action: 'update_product',
-                                                    product_id: existingProductId,
-                                                    product_data: product_data
-                                                }).always(function() {
-                                                    processed++;
-                                                    successCount++;
-                                                    document.querySelector('.sync-success-count').innerText = successCount;
-                                                    updateProgress(processed, total);
-                                                    processNextProduct(index + 1);
-                                                });
-                                            } else if (product_data.inactiveFlag !== true && product_data.inactiveFlag !== "1") {
-                                                // Only create new product if inactiveFlag is not true or "1"
-                                                document.querySelector('.sync-status-message').innerText = 'Creating: ' + (product_data.title || product_data.stockCode);
-                                                jQuery.post(ajaxurl, {
-                                                    action: 'create_product',
-                                                    product_data: product_data
-                                                }).always(function() {
-                                                    processed++;
-                                                    successCount++;
-                                                    document.querySelector('.sync-success-count').innerText = successCount;
-                                                    updateProgress(processed, total);
-                                                    processNextProduct(index + 1);
-                                                });
-                                            } else {
-                                                // Skip this product
-                                                document.querySelector('.sync-status-message').innerText = 'Skipping inactive product: ' + (product_data.title || product_data.stockCode);
-                                                processed++;
-                                                skipCount++;
-                                                document.querySelector('.sync-skip-count').innerText = skipCount;
-                                                updateProgress(processed, total);
-                                                processNextProduct(index + 1);
-                                            }
-                                        }
-
-                                        // Helper function to update progress
-                                        function updateProgress(current, total) {
-                                            const percent = Math.round((current / total) * 100);
-                                            document.querySelector('.progress-bar').style.width = percent + '%';
-                                            document.querySelector('.sync-count').innerText = current;
-                                            document.getElementById('message').innerText = 'Processed: ' + current + ' of ' + total + 
-                                                ' (' + percent + '%)';
-                                        }
-
-                                        // Start processing products
-                                        processNextProduct(0);
-                                    }).fail(function(error) {
-                                        document.querySelector('.sync-status-message').innerText = 'Error: Failed to get existing products';
-                                        document.getElementById('message').innerText = 'Failed to get existing products: ' + error.message;
-                                    });
+                                if (response.data.has_more) {
+                                    page++;
+                                    setTimeout(runImportBatch, 100);
                                 } else {
-                                    document.querySelector('.sync-status-message').innerText = 'Error: Invalid response from API';
-                                    document.getElementById('message').innerText = 'Invalid response from API.';
+                                    updateProgress();
+                                    finishSync();
                                 }
-                            })
-                            .catch(error => {
-                                document.querySelector('.sync-status-message').innerText = 'Error: ' + error.message;
-                                document.getElementById('message').innerText = 'An error occurred: ' + error.message;
+                            }).fail(function(xhr, status, error) {
+                                document.querySelector('.sync-status-message').innerText = 'Request failed';
+                                document.getElementById('message').innerText = 'Import request failed on page ' + page + ': ' + error;
                             });
-                    }).catch(error => {
-                        document.querySelector('.sync-status-message').innerText = 'Authentication error';
-                        document.getElementById('message').innerText = 'An error occurred: ' + error;
+                        }
+
+                        jQuery.post(ajaxurl, {
+                            action: 'ggt_analyze_import'
+                        }).done(function(response) {
+                            if (response.success && response.data) {
+                                total = response.data.total || 0;
+                            }
+
+                            document.querySelector('.sync-total').innerText = total;
+
+                            if (total === 0) {
+                                document.querySelector('.sync-status-message').innerText = 'No products to import';
+                                document.getElementById('message').innerText = 'No products were returned by the API for import.';
+                                return;
+                            }
+
+                            runImportBatch();
+                        }).fail(function(xhr, status, error) {
+                            document.querySelector('.sync-status-message').innerText = 'Analysis failed';
+                            document.getElementById('message').innerText = 'Failed to analyze import before syncing: ' + error;
+                        });
                     });
-                });
+                }
 
               
 
@@ -2013,8 +1961,9 @@ function ggt_core_create_product($product_data) {
     relate_products_via_acf($product->get_id(), $product_data);
     
     // Set featured image after product is saved (needs product ID)
-    if (!empty($product_data['image_path'])) {
-        set_product_featured_image_from_url($product->get_id(), $product_data['image_path']);
+    $image_path = isset($product_data['image_path']) ? trim((string) $product_data['image_path']) : '';
+    if ($image_path !== '') {
+        set_product_featured_image_from_url($product->get_id(), $image_path);
     }
 
     return $product->get_id();
@@ -2075,13 +2024,14 @@ function ggt_core_update_product($product_id, $product_data) {
         relate_products_via_acf($product->get_id(), $product_data);
         
         // Set featured image after product is saved (respect replace setting)
-        if (!empty($product_data['image_path'])) {
+        $image_path = isset($product_data['image_path']) ? trim((string) $product_data['image_path']) : '';
+        if ($image_path !== '') {
             $replace = (int) get_option('ggt_replace_existing_image', 0);
             $has_existing = has_post_thumbnail($product_id);
             if ($has_existing && !$replace) {
                 ggt_log("Product {$product_id}: Skipped featured image replacement (option disabled)", 'IMPORT');
             } else {
-                set_product_featured_image_from_url($product->get_id(), $product_data['image_path']);
+                set_product_featured_image_from_url($product->get_id(), $image_path);
             }
         }
         
@@ -2501,6 +2451,8 @@ function find_or_create_product_category($category_name) {
 
 // Helper function to set featured image from URL
 function set_product_featured_image_from_url($product_id, $image_path) {
+    $image_path = is_string($image_path) ? trim($image_path) : $image_path;
+
     if (empty($image_path)) {
         ggt_log("Empty image path for product {$product_id}", 'IMAGE');
         return false;
@@ -2521,15 +2473,15 @@ function set_product_featured_image_from_url($product_id, $image_path) {
         // - Legacy values may be: product-images/....ext
         $relative = ltrim($image_path, '/');
         if (strpos($relative, 'product-images/') === 0) {
-            $relative = 'products/' . basename($relative); // map old folder to new and flatten to filename
+            $relative = 'product-images/' . basename($relative); // map old folder to new and flatten to filename
         } elseif (basename($relative) === $relative) {
-            // It's just a filename -> assume products/
-            $relative = 'products/' . $relative;
+            // It's just a filename -> assume product-images/
+            $relative = 'product-images/' . $relative;
         }
 
         // Build direct public storage URL served by Laravel storage symlink
         // Example: https://api-staging.gogeothermal.uk/storage/products/product_STOCKCODE_123.png
-        $image_path = rtrim($api_host, '/') . '/storage/' . $relative;
+        $image_path = rtrim($api_host, '/') . '/api/' . $relative;
         ggt_log("Constructed storage URL: {$image_path}", 'IMAGE');
     }
     

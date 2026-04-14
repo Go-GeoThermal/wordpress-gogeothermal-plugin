@@ -947,18 +947,19 @@ function ggt_create_product_with_mapping($mapped_data) {
             }
         }
         
-        // Handle featured image (respect replace setting only if an image already exists)
-        if (isset($mapped_data['image_url']) && !empty($mapped_data['image_url'])) {
+        // Handle featured image (respect replace setting only if a usable image was provided)
+        $image_url = isset($mapped_data['image_url']) ? trim((string) $mapped_data['image_url']) : '';
+        if ($image_url !== '') {
             $replace = (int) get_option('ggt_replace_existing_image', 0);
             $has_existing = has_post_thumbnail($product_id);
             if ($has_existing && !$replace) {
                 ggt_log("Product {$product_id}: Skipping featured image replacement (option disabled)", 'IMPORT');
             } else {
-                ggt_log("Product {$product_id}: Found image_url in mapped data: {$mapped_data['image_url']}", 'IMPORT');
-                set_product_featured_image_from_url($product_id, $mapped_data['image_url']);
+                ggt_log("Product {$product_id}: Found image_url in mapped data: {$image_url}", 'IMPORT');
+                set_product_featured_image_from_url($product_id, $image_url);
             }
         } else {
-            ggt_log("Product {$product_id}: No image_url in mapped data", 'IMPORT');
+            ggt_log("Product {$product_id}: No usable image_url in mapped data", 'IMPORT');
         }
 
         // Apply taxonomy mappings if present
@@ -1080,18 +1081,19 @@ function ggt_update_product_with_mapping($product_id, $mapped_data) {
             }
         }
     }
-    // Handle featured image (respect replace setting)
-    if (isset($mapped_data['image_url']) && !empty($mapped_data['image_url'])) {
+    // Handle featured image (respect replace setting only if a usable image was provided)
+    $image_url = isset($mapped_data['image_url']) ? trim((string) $mapped_data['image_url']) : '';
+    if ($image_url !== '') {
         $replace = (int) get_option('ggt_replace_existing_image', 0);
         $has_existing = has_post_thumbnail($product_id);
         if ($has_existing && !$replace) {
             ggt_log("Product {$product_id}: Skipping featured image replacement (option disabled)", 'IMPORT');
         } else {
-            ggt_log("Product {$product_id}: Found image_url in mapped data: {$mapped_data['image_url']}", 'IMPORT');
-            set_product_featured_image_from_url($product_id, $mapped_data['image_url']);
+            ggt_log("Product {$product_id}: Found image_url in mapped data: {$image_url}", 'IMPORT');
+            set_product_featured_image_from_url($product_id, $image_url);
         }
     } else {
-        ggt_log("Product {$product_id}: No image_url in mapped data", 'IMPORT');
+        ggt_log("Product {$product_id}: No usable image_url in mapped data", 'IMPORT');
     }
 
     // Apply taxonomy mappings if present
