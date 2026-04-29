@@ -863,20 +863,39 @@ class Sinappsus_GGT_Admin_UI
                         }
 
                         function finishSync() {
-                            document.querySelector('.user-sync-status-message').innerText = 'Synchronization complete!';
-                            document.getElementById('message').innerText = 'Users synchronized successfully! Updated: ' + 
-                                successCount + ', Failed: ' + errorCount;
-                            
+                            document.querySelector('.user-sync-status-message').innerText = 'Syncing account sub-users...';
+                            document.getElementById('message').innerText = 'Primary sync done. Syncing account sub-users...';
+
                             jQuery.post(ajaxurl, {
                                 action: 'ggt_store_last_user_sync',
                                 updated: successCount,
                                 failed: errorCount,
                                 total: totalUsers
                             });
-                            
-                            setTimeout(function() {
-                                document.getElementById('user-sync-progress-container').style.display = 'none';
-                            }, 20000);
+
+                            jQuery.post(ajaxurl, {
+                                action: 'ggt_sync_account_sub_users'
+                            }, function(response) {
+                                var subMsg = '';
+                                if (response.success && response.data) {
+                                    subMsg = ' Sub-users: Created ' + (response.data.created || 0) + ', Updated ' + (response.data.updated || 0) + ', Failed ' + (response.data.failed || 0) + '.';
+                                } else if (!response.success) {
+                                    subMsg = ' Sub-user sync failed.';
+                                }
+                                document.querySelector('.user-sync-status-message').innerText = 'Synchronization complete!';
+                                document.getElementById('message').innerText = 'Users synchronized successfully! Updated: ' +
+                                    successCount + ', Failed: ' + errorCount + '.' + subMsg;
+                                setTimeout(function() {
+                                    document.getElementById('user-sync-progress-container').style.display = 'none';
+                                }, 20000);
+                            }).fail(function() {
+                                document.querySelector('.user-sync-status-message').innerText = 'Synchronization complete!';
+                                document.getElementById('message').innerText = 'Users synchronized successfully! Updated: ' +
+                                    successCount + ', Failed: ' + errorCount + '. (Sub-user sync request failed)';
+                                setTimeout(function() {
+                                    document.getElementById('user-sync-progress-container').style.display = 'none';
+                                }, 20000);
+                            });
                         }
 
                         // Start
@@ -1766,6 +1785,7 @@ add_action('wp_ajax_reset_token', 'reset_token');
 // Store last sync/import summaries
 add_action('wp_ajax_ggt_store_last_user_sync', 'ggt_store_last_user_sync');
 add_action('wp_ajax_ggt_store_last_product_sync', 'ggt_store_last_product_sync');
+add_action('wp_ajax_ggt_sync_account_sub_users', 'ggt_ajax_sync_account_sub_users');
 // Dismiss admin auth notice
 add_action('wp_ajax_ggt_dismiss_auth_notice', 'ggt_dismiss_auth_notice');
 
@@ -1817,6 +1837,20 @@ function ggt_dismiss_auth_notice() {
     }
     delete_option('ggt_auth_required');
     wp_send_json_success();
+}
+
+function ggt_ajax_sync_account_sub_users() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('Unauthorized', 401);
+        return;
+    }
+    if (!function_exists('ggt_run_account_sub_users_sync_cron')) {
+        wp_send_json_error('Sub-user sync function not available');
+        return;
+    }
+    ggt_run_account_sub_users_sync_cron();
+    $result = get_option('ggt_last_sub_user_sync', array());
+    wp_send_json_success($result);
 }
 
 
