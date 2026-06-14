@@ -282,6 +282,14 @@ function ggt_save_field_mapping() {
     if (!is_array($enabled_fields)) {
         $enabled_fields = array();
     }
+
+    // Normalize target keys so legacy/typo values still map correctly.
+    foreach ($mapping as $api_field => $wc_field) {
+        if (!is_string($wc_field)) {
+            continue;
+        }
+        $mapping[$api_field] = ggt_normalize_product_mapping_target($wc_field);
+    }
     
     update_option('ggt_product_field_mapping', $mapping);
     update_option('ggt_product_field_mapping_enabled', $enabled_fields);
@@ -293,6 +301,27 @@ function ggt_save_field_mapping() {
         'saved_enabled' => $enabled_fields,
         'received_post' => $_POST
     ));
+}
+
+/**
+ * Normalize WooCommerce mapping target names to supported keys.
+ *
+ * @param string $target Raw mapping target
+ * @return string
+ */
+function ggt_normalize_product_mapping_target($target) {
+    $normalized = trim((string) $target);
+
+    $aliases = array(
+        'sales_price' => 'sale_price',
+        'stock_qty' => 'stock_quantity',
+    );
+
+    if (isset($aliases[$normalized])) {
+        return $aliases[$normalized];
+    }
+
+    return $normalized;
 }
 
 /**
@@ -833,12 +862,27 @@ function ggt_execute_flexible_import() {
 function ggt_apply_field_mapping($product_data, $mapping) {
     $mapped = array();
     $enabled_fields = get_option('ggt_product_field_mapping_enabled', array());
+
+    if (!is_array($enabled_fields)) {
+        $enabled_fields = array();
+    }
     
     foreach ($mapping as $api_field => $wc_field) {
+        $wc_field = ggt_normalize_product_mapping_target($wc_field);
+
         // Only map if field is enabled
-        if (isset($enabled_fields[$api_field]) && $enabled_fields[$api_field] && isset($product_data[$api_field])) {
-            $mapped[$wc_field] = $product_data[$api_field];
+        $is_enabled = !isset($enabled_fields[$api_field]) || (bool) $enabled_fields[$api_field];
+        if ($is_enabled && isset($product_data[$api_field])) {
+            // Keep the first mapped value for a target to prevent cross-field overwrite bleed.
+            if (!array_key_exists($wc_field, $mapped)) {
+                $mapped[$wc_field] = $product_data[$api_field];
+            }
         }
+    }
+
+    // If only sale price is mapped, use it as the product price baseline.
+    if (!isset($mapped['regular_price']) && isset($mapped['sale_price'])) {
+        $mapped['regular_price'] = $mapped['sale_price'];
     }
     
     return $mapped;
@@ -889,6 +933,7 @@ function ggt_create_product_with_mapping($mapped_data) {
     
     if (isset($mapped_data['regular_price'])) {
         $product->set_regular_price($mapped_data['regular_price']);
+        $product->set_price($mapped_data['regular_price']);
     }
     
     if (isset($mapped_data['sale_price'])) {
@@ -1023,8 +1068,10 @@ function ggt_update_product_with_mapping($product_id, $mapped_data) {
     
     if (isset($mapped_data['regular_price'])) {
         $product->set_regular_price($mapped_data['regular_price']);
+        $product->set_price($mapped_data['regular_price']);
     } elseif (isset($mapped_data['salesPrice'])) {
         $product->set_regular_price($mapped_data['salesPrice']);
+        $product->set_price($mapped_data['salesPrice']);
     }
     
     if (isset($mapped_data['sale_price'])) {
@@ -1049,12 +1096,16 @@ function ggt_update_product_with_mapping($product_id, $mapped_data) {
         $product->set_weight($mapped_data['weight']);
     }
     
-    // Handle category
-    if (isset($mapped_data['category'])) {
+    // Handle category only when updates are allowed and the mapped value is usable.
+    if (!ggt_should_ignore_category_updates() && isset($mapped_data['category'])) {
         $category_id = find_or_create_product_category($mapped_data['category']);
         if ($category_id) {
             $product->set_category_ids(array($category_id));
+        } else {
+            ggt_log("Product {$product_id}: Skipping invalid or placeholder category value", 'IMPORT');
         }
+    } elseif (ggt_should_ignore_category_updates() && isset($mapped_data['category'])) {
+        ggt_log("Product {$product_id}: Skipping category update (option enabled)", 'IMPORT');
     }
     
     // Handle shipping class
@@ -1097,7 +1148,7 @@ function ggt_update_product_with_mapping($product_id, $mapped_data) {
     }
 
     // Apply taxonomy mappings if present
-    ggt_apply_taxonomy_mappings($product_id, $mapped_data);
+    ggt_apply_taxonomy_mappings($product_id, $mapped_data, true);
     
     return true;
 }
@@ -1338,7 +1389,7 @@ function ggt_ensure_terms_and_assign($product_id, $taxonomy, $terms) {
 /**
  * Apply taxonomy mappings found in mapped_data (keys like 'taxonomy:product_cat' => 'Boilers|Pumps').
  */
-function ggt_apply_taxonomy_mappings($product_id, $mapped_data) {
+function ggt_apply_taxonomy_mappings($product_id, $mapped_data, $is_update = false) {
     foreach ($mapped_data as $key => $value) {
         if (strpos($key, 'taxonomy:') !== 0) continue;
         $taxonomy = substr($key, strlen('taxonomy:'));
@@ -1348,7 +1399,14 @@ function ggt_apply_taxonomy_mappings($product_id, $mapped_data) {
         if (!in_array($taxonomy, $product_taxonomies, true)) {
             continue;
         }
+        if ($taxonomy === 'product_cat' && $is_update && ggt_should_ignore_category_updates()) {
+            ggt_log("Product {$product_id}: Skipping product category taxonomy update (option enabled)", 'IMPORT');
+            continue;
+        }
         $terms = ggt_parse_taxonomy_terms_value($value);
+        if ($taxonomy === 'product_cat') {
+            $terms = array_values(array_filter(array_map('ggt_normalize_product_category_name', $terms)));
+        }
         if (!empty($terms)) {
             ggt_ensure_terms_and_assign($product_id, $taxonomy, $terms);
         }

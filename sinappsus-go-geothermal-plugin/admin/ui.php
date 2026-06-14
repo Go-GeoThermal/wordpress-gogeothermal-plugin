@@ -361,6 +361,18 @@ class Sinappsus_GGT_Admin_UI
                         </tr>
                     </table>
 
+                    <!-- Pricing Settings -->
+                    <h3>Pricing Settings</h3>
+                    <table class="form-table">
+                        <tr valign="top">
+                            <th scope="row">Guest Price Markup Percentage</th>
+                            <td>
+                                <input type="number" name="ggt_guest_price_markup_percentage" value="<?php echo esc_attr(get_option('ggt_guest_price_markup_percentage', 30)); ?>" class="small-text" min="0" step="0.01" /> %
+                                <p class="description">Percentage added to product prices for shoppers who are not logged in. Logged-in customers continue to see Sage pricing or their linked custom price list.</p>
+                            </td>
+                        </tr>
+                    </table>
+
                     <!-- Import Settings -->
                     <h3>Import Settings</h3>
                     <table class="form-table">
@@ -447,6 +459,16 @@ class Sinappsus_GGT_Admin_UI
                                     Always replace existing featured image during import/sync
                                 </label>
                                 <p class="description">When unchecked, products that already have a featured image keep it even if the mapped image URL changes. New products always get an image if provided.</p>
+                            </td>
+                        </tr>
+                        <tr valign="top">
+                            <th scope="row">Ignore Category Updates</th>
+                            <td>
+                                <label for="ggt_ignore_category_updates">
+                                    <input type="checkbox" id="ggt_ignore_category_updates" name="ggt_ignore_category_updates" value="1" <?php checked(1, get_option('ggt_ignore_category_updates'), true); ?> />
+                                    Keep existing WooCommerce categories during product updates
+                                </label>
+                                <p class="description">When enabled, imports and syncs will not change categories on existing products. New products can still receive a valid mapped category.</p>
                             </td>
                         </tr>
                     </table>
@@ -1101,6 +1123,8 @@ class Sinappsus_GGT_Admin_UI
                     document.getElementById('step-mapping').style.display = 'none';
                     document.getElementById('step-analysis').style.display = 'none';
                     document.getElementById('step-results').style.display = 'none';
+                    document.getElementById('execute-section').style.display = 'none';
+                    document.getElementById('execute-import').disabled = false;
                 });
 
                 document.getElementById('close-modal').addEventListener('click', function() {
@@ -1497,6 +1521,9 @@ class Sinappsus_GGT_Admin_UI
                             console.log('Received POST:', response.data.received_post);
                             document.getElementById('step-mapping').style.display = 'none';
                             document.getElementById('step-analysis').style.display = 'block';
+                            document.getElementById('execute-section').style.display = 'none';
+                            document.getElementById('execute-import').disabled = false;
+                            document.getElementById('analysis-results').innerHTML = '';
                         } else {
                             alert('Error saving mapping: ' + (response.data || 'Unknown error'));
                         }
@@ -1513,25 +1540,32 @@ class Sinappsus_GGT_Admin_UI
                 document.getElementById('back-to-mapping').addEventListener('click', function() {
                     document.getElementById('step-analysis').style.display = 'none';
                     document.getElementById('step-mapping').style.display = 'block';
+                    document.getElementById('execute-section').style.display = 'none';
+                    document.getElementById('execute-import').disabled = false;
                 });
 
                 document.getElementById('run-analysis').addEventListener('click', function() {
+                    document.getElementById('execute-section').style.display = 'none';
+                    document.getElementById('execute-import').disabled = true;
                     document.getElementById('analysis-results').innerHTML = '<p>Analyzing...</p>';
                     
                     jQuery.post(ajaxurl, {
                         action: 'ggt_analyze_import'
                     }).done(function(response) {
                         if (response.success) {
+                            const analysisData = response.data || {};
+                            const warnings = Array.isArray(analysisData.warnings) ? analysisData.warnings : [];
+
                             let html = '<div style="border:1px solid #ddd; padding:15px; background:#fff;">';
                             html += '<h4>Analysis Results</h4>';
-                            html += '<p><strong>Total Products:</strong> ' + response.data.total + '</p>';
-                            html += '<p><strong>Existing (will update):</strong> ' + response.data.existing + '</p>';
-                            html += '<p><strong>New (will create):</strong> ' + response.data.new + '</p>';
+                            html += '<p><strong>Total Products:</strong> ' + (analysisData.total || 0) + '</p>';
+                            html += '<p><strong>Existing (will update):</strong> ' + (analysisData.existing || 0) + '</p>';
+                            html += '<p><strong>New (will create):</strong> ' + (analysisData.new || 0) + '</p>';
                             
-                            if (response.data.warnings.length > 0) {
+                            if (warnings.length > 0) {
                                 html += '<div style="background:#fff3cd; border:1px solid #ffc107; padding:10px; margin-top:10px;">';
                                 html += '<strong>Warnings:</strong><ul>';
-                                response.data.warnings.forEach(warning => {
+                                warnings.forEach(warning => {
                                     html += '<li>' + warning + '</li>';
                                 });
                                 html += '</ul></div>';
@@ -1540,9 +1574,14 @@ class Sinappsus_GGT_Admin_UI
                             html += '</div>';
                             document.getElementById('analysis-results').innerHTML = html;
                             document.getElementById('execute-section').style.display = 'block';
+                            document.getElementById('execute-import').disabled = false;
                         } else {
                             document.getElementById('analysis-results').innerHTML = '<p style="color:red;">Error: ' + (response.data || 'Unknown error') + '</p>';
+                            document.getElementById('execute-import').disabled = false;
                         }
+                    }).fail(function(xhr, status, error) {
+                        document.getElementById('analysis-results').innerHTML = '<p style="color:red;">Error: Analysis request failed. ' + error + '</p>';
+                        document.getElementById('execute-import').disabled = false;
                     });
                 });
 
@@ -1757,10 +1796,16 @@ function ggt_sinappsus_register_settings()
     // Settings tab (registration & import)
     register_setting('ggt_sinappsus_settings_group', 'ggt_enable_additional_registration_fields');
     register_setting('ggt_sinappsus_settings_group', 'ggt_registration_two_columns');
+    register_setting('ggt_sinappsus_settings_group', 'ggt_guest_price_markup_percentage', array(
+        'type'              => 'number',
+        'sanitize_callback' => 'ggt_sanitize_guest_price_markup_percentage',
+        'default'           => 30,
+    ));
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_enable_acf_relate');
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_acf_required_field');
     register_setting('ggt_sinappsus_settings_group', 'ggt_import_acf_related_field');
     register_setting('ggt_sinappsus_settings_group', 'ggt_replace_existing_image');
+    register_setting('ggt_sinappsus_settings_group', 'ggt_ignore_category_updates');
     register_setting('ggt_sinappsus_settings_group', 'ggt_account_not_found_email');
     register_setting('ggt_sinappsus_settings_group', 'ggt_auto_sync_products');
     register_setting('ggt_sinappsus_settings_group', 'ggt_auto_sync_users');
@@ -1773,6 +1818,24 @@ function ggt_sinappsus_register_settings()
     register_setting('ggt_sinappsus_auth_group', 'ggt_sinappsus_environment');
     register_setting('ggt_sinappsus_auth_group', 'ggt_sinappsus_email');
     register_setting('ggt_sinappsus_auth_group', 'ggt_sinappsus_password');
+}
+
+/**
+ * Sanitize the guest markup percentage saved from the settings page.
+ */
+function ggt_sanitize_guest_price_markup_percentage($value)
+{
+    if ($value === '' || $value === null || is_array($value)) {
+        return 30;
+    }
+
+    $percentage = (float) $value;
+
+    if ($percentage < 0) {
+        return 0;
+    }
+
+    return round($percentage, 2);
 }
 
 add_action('wp_ajax_clear_all_products', 'clear_all_products');
@@ -1975,7 +2038,7 @@ function ggt_core_create_product($product_data) {
     }
 
     // Handle category assignment
-    if (!empty($product_data['category'])) {
+    if (isset($product_data['category'])) {
         $category_id = find_or_create_product_category($product_data['category']);
         if ($category_id) {
             $product->set_category_ids(array($category_id));
@@ -2038,7 +2101,7 @@ function ggt_core_update_product($product_id, $product_data) {
         $product->set_backorders('yes');
 
         // Handle category assignment
-        if (!empty($product_data['category'])) {
+        if (!ggt_should_ignore_category_updates() && isset($product_data['category'])) {
             $category_id = find_or_create_product_category($product_data['category']);
             if ($category_id) {
                 $product->set_category_ids(array($category_id));
@@ -2369,6 +2432,21 @@ function save_custom_registration_fields($user_id)
         }
     }
 
+    $company_email = function_exists('ggt_get_registration_company_link_email')
+        ? ggt_get_registration_company_link_email()
+        : '';
+
+    if (!empty($company_email) && function_exists('ggt_attempt_registration_company_link')) {
+        $link_result = ggt_attempt_registration_company_link($user_id, $company_email, $user_data);
+
+        if (!empty($link_result['linked'])) {
+            if (function_exists('ggt_log')) {
+                ggt_log('Registration linked as account sub-user for accountRef: ' . $link_result['account_ref'], 'REGISTRATION');
+            }
+            return;
+        }
+    }
+
     // Send user data to the API using centralized function
     ggt_sinappsus_connect_to_api('customers', $user_data, 'POST');
 }
@@ -2452,22 +2530,49 @@ function store_environment()
 add_action('woocommerce_register_form', 'add_custom_registration_fields');
 // add_action('woocommerce_created_customer', 'save_custom_registration_fields'); // Removed to prevent duplicate API calls (already handled by user_register)
 
+/**
+ * Whether imports should preserve categories on existing products.
+ */
+function ggt_should_ignore_category_updates() {
+    return (bool) get_option('ggt_ignore_category_updates', 0);
+}
+
+/**
+ * Normalize an incoming category name and reject placeholder values.
+ *
+ * @param mixed $category_name Incoming mapped value.
+ * @return string
+ */
+function ggt_normalize_product_category_name($category_name) {
+    if (!is_scalar($category_name)) {
+        return '';
+    }
+
+    $category_name = trim(wp_strip_all_tags((string) $category_name));
+    if ($category_name === '') {
+        return '';
+    }
+
+    $placeholder_values = array('unknown', 'n/a', 'na', 'none', 'null', 'undefined');
+    if (in_array(strtolower($category_name), $placeholder_values, true)) {
+        return '';
+    }
+
+    return $category_name;
+}
+
 // Helper function to find or create product category
 function find_or_create_product_category($category_name) {
-    if (empty($category_name)) {
+    $category_name = ggt_normalize_product_category_name($category_name);
+    if ($category_name === '') {
         return null;
     }
-    
-    // Search for existing categories with wildcard matching
-    $existing_categories = get_terms(array(
-        'taxonomy' => 'product_cat',
-        'name__like' => $category_name,
-        'hide_empty' => false,
-    ));
-    
-    // If found, return the first match
-    if (!empty($existing_categories)) {
-        return $existing_categories[0]->term_id;
+
+    // Category assignment must use an exact match; wildcard matches can select
+    // a different existing category with a similar name.
+    $existing_category = get_term_by('name', $category_name, 'product_cat');
+    if ($existing_category && !is_wp_error($existing_category)) {
+        return (int) $existing_category->term_id;
     }
     
     // Create new category if not found
@@ -2477,6 +2582,10 @@ function find_or_create_product_category($category_name) {
     );
     
     if (is_wp_error($new_category)) {
+        $existing_term_id = $new_category->get_error_data('term_exists');
+        if ($existing_term_id) {
+            return (int) $existing_term_id;
+        }
         return null;
     }
     

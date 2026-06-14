@@ -1,0 +1,79 @@
+.ggt-company-link-section {
+    grid-column: 1 / -1;
+    clear: both;
+    width: 100%;
+    margin: 18px 0 16px;
+    padding: 12px 0 14px;
+    border-top: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.ggt-company-link-label {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center !important;
+    justify-content: start !important;
+    justify-items: start !important;
+    gap: 10px;
+    width: 100%;
+    margin: 0;
+    line-height: 1.4;
+    cursor: pointer;
+    text-align: left !important;
+}
+
+.ggt-company-link-checkbox {
+    appearance: auto;
+    -webkit-appearance: checkbox;
+    display: inline-block !important;
+    position: static !important;
+    float: none !important;
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
+    margin: 0 !important;
+    transform: none !important;
+    vertical-align: middle;
+}
+
+.ggt-company-link-text {
+    display: block;
+    min-width: 0;
+    text-align: left;
+    white-space: normal;
+}
+
+.ggt-company-email-row {
+    grid-column: 1 / -1;
+    clear: both;
+    width: 100%;
+}
+
+.ggt-company-email-row input[type="email"] {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.ggt-company-email-validation {
+    display: block !important;
+    position: static !important;
+    clear: both;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 8px 0 0 !important;
+    padding: 10px 12px;
+    border-left: 3px solid #b91c1c;
+    background: #fef2f2;
+    color: #111827;
+    line-height: 1.45;
+    white-space: normal;
+    overflow-wrap: break-word;
+    transform: none !important;
+    z-index: auto !important;
+}
+
+.ggt-company-email-validation[hidden] {
+    display: none !important;
+}

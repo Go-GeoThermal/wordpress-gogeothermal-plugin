@@ -6,6 +6,10 @@
  * When a logged-in user has an accountRef and custom pricing from the API,
  * their discounted prices replace the default WooCommerce prices on all pages:
  * shop, single product, cart, checkout, etc.
+ *
+ * Anonymous/guest shoppers see the standard WooCommerce/Sage price plus the
+ * configured guest markup percentage. Logged-in users keep normal Sage prices
+ * unless their account has a custom price list.
  * 
  * Pricing is cached per-customer using WordPress transients to minimize API calls.
  */
@@ -27,6 +31,9 @@ class GGT_Customer_Pricing {
 
     /** Cache duration in seconds (1 hour) */
     const CACHE_TTL = 3600;
+
+    /** Default percentage added to guest prices when the setting has not been saved. */
+    const DEFAULT_GUEST_MARKUP_PERCENTAGE = 30;
 
     /**
      * Boot all hooks
@@ -156,6 +163,51 @@ class GGT_Customer_Pricing {
         return null;
     }
 
+    /**
+     * Get the configured guest price markup percentage.
+     *
+     * @return float
+     */
+    public static function get_guest_markup_percentage() {
+        $percentage = get_option('ggt_guest_price_markup_percentage', self::DEFAULT_GUEST_MARKUP_PERCENTAGE);
+
+        if ($percentage === '' || $percentage === null || is_array($percentage) || !is_numeric($percentage)) {
+            return (float) self::DEFAULT_GUEST_MARKUP_PERCENTAGE;
+        }
+
+        return max(0, (float) $percentage);
+    }
+
+    /**
+     * Check whether guest markup should be applied for the current request.
+     *
+     * @return bool
+     */
+    public static function should_apply_guest_markup() {
+        return !is_user_logged_in() && self::get_guest_markup_percentage() > 0;
+    }
+
+    /**
+     * Add the configured guest markup to a numeric price.
+     *
+     * @param mixed $price Base WooCommerce price
+     * @return mixed Marked-up price, or the original value when it cannot be changed
+     */
+    public static function apply_guest_markup_to_price($price) {
+        if (!self::should_apply_guest_markup()) {
+            return $price;
+        }
+
+        if ($price === '' || $price === null || !is_numeric($price)) {
+            return $price;
+        }
+
+        $decimals = function_exists('wc_get_price_decimals') ? wc_get_price_decimals() : 2;
+        $multiplier = 1 + (self::get_guest_markup_percentage() / 100);
+
+        return round((float) $price * $multiplier, $decimals);
+    }
+
     // ─────────────────────────────────────────────
     //  WooCommerce Price Filters
     // ─────────────────────────────────────────────
@@ -178,7 +230,7 @@ class GGT_Customer_Pricing {
             return $custom_price;
         }
 
-        return $price;
+        return self::apply_guest_markup_to_price($price);
     }
 
     /**
@@ -200,7 +252,7 @@ class GGT_Customer_Pricing {
             return '';
         }
 
-        return $price;
+        return self::apply_guest_markup_to_price($price);
     }
 
     /**
@@ -216,7 +268,7 @@ class GGT_Customer_Pricing {
             return $custom_price;
         }
 
-        return $price;
+        return self::apply_guest_markup_to_price($price);
     }
 
     /**
@@ -232,7 +284,7 @@ class GGT_Customer_Pricing {
             return '';
         }
 
-        return $price;
+        return self::apply_guest_markup_to_price($price);
     }
 
     /**
@@ -305,6 +357,8 @@ class GGT_Customer_Pricing {
      */
     public static function variation_prices_hash($hash, $product, $for_display) {
         if (is_user_logged_in()) {
+            $hash[] = 'ggt_logged_in';
+
             $user_id = get_current_user_id();
             $account_ref = get_user_meta($user_id, 'accountRef', true);
             if (!$account_ref) {
@@ -313,6 +367,8 @@ class GGT_Customer_Pricing {
             if ($account_ref) {
                 $hash[] = 'ggt_' . md5($account_ref);
             }
+        } else {
+            $hash[] = 'ggt_guest_markup_' . self::get_guest_markup_percentage();
         }
         return $hash;
     }
