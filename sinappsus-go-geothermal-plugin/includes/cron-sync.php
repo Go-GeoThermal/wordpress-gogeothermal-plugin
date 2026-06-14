@@ -75,6 +75,9 @@ function ggt_execute_daily_sync() {
         } else {
              if (function_exists('ggt_log')) ggt_log("Daily Sync: User mapping empty, skipping users.", 'CRON');
         }
+
+        // Always sync account sub-users (they don't need field mapping — fixed fields)
+        ggt_run_account_sub_users_sync_cron();
     }
 }
 
@@ -205,6 +208,218 @@ function ggt_run_user_sync_cron() {
         'updated' => $updated,
         'failed' => $failed,
         'total' => $count,
+        'timestamp' => time(),
+    ));
+}
+
+/**
+ * Resolve the best parent WP user for an accountRef.
+ */
+function ggt_get_primary_account_ref_user_id($account_ref, $exclude_user_id = 0) {
+    if (empty($account_ref)) {
+        return 0;
+    }
+
+    $user_ids = get_users(array(
+        'fields'     => 'ids',
+        'meta_key'   => 'accountRef',
+        'meta_value' => $account_ref,
+        'number'     => -1,
+    ));
+
+    if (empty($user_ids)) {
+        return 0;
+    }
+
+    $fallback_user_id = 0;
+
+    foreach ($user_ids as $candidate_user_id) {
+        $candidate_user_id = intval($candidate_user_id);
+
+        if ($candidate_user_id === intval($exclude_user_id)) {
+            continue;
+        }
+
+        if (!$fallback_user_id) {
+            $fallback_user_id = $candidate_user_id;
+        }
+
+        if ((int) get_user_meta($candidate_user_id, 'ggt_is_sub_user', true) !== 1) {
+            return $candidate_user_id;
+        }
+    }
+
+    return $fallback_user_id;
+}
+
+/**
+ * Copy mapped account-level targets from the primary accountRef user to a sub-user.
+ */
+function ggt_apply_parent_account_ref_fields_to_user($target_user_id, $account_ref) {
+    if (empty($target_user_id) || empty($account_ref) || !function_exists('ggt_update_user_targets')) {
+        return false;
+    }
+
+    $parent_user_id = ggt_get_primary_account_ref_user_id($account_ref, $target_user_id);
+    if (empty($parent_user_id)) {
+        return false;
+    }
+
+    $mapping = get_option('ggt_user_field_mapping', array());
+    if (is_object($mapping)) {
+        $mapping = (array) $mapping;
+    }
+
+    if (!isset($mapping['creditLimit'])) {
+        $mapping['creditLimit'] = 'creditLimit';
+    }
+    if (!isset($mapping['accountRef'])) {
+        $mapping['accountRef'] = 'accountRef';
+    }
+    if (!isset($mapping['balance'])) {
+        $mapping['balance'] = 'balance';
+    }
+
+    $excluded_core_targets = array('user_email', 'first_name', 'last_name', 'display_name', 'nickname');
+    $mapped_targets = array();
+
+    foreach ((array) $mapping as $source_key => $target_key) {
+        if (empty($target_key) || in_array($target_key, $excluded_core_targets, true)) {
+            continue;
+        }
+
+        if (stripos($target_key, 'email') !== false) {
+            continue;
+        }
+
+        if (array_key_exists($target_key, $mapped_targets)) {
+            continue;
+        }
+
+        $mapped_targets[$target_key] = get_user_meta($parent_user_id, $target_key, true);
+    }
+
+    if (empty($mapped_targets)) {
+        return false;
+    }
+
+    ggt_update_user_targets($target_user_id, $mapped_targets);
+
+    return true;
+}
+
+function ggt_run_account_sub_users_sync_cron() {
+    if (function_exists('ggt_log')) ggt_log("Starting Account Sub-User Sync", 'CRON');
+
+    @ini_set('memory_limit', '1024M');
+    @set_time_limit(0);
+
+    // Fetch all sub-users from API
+    $response = ggt_sinappsus_connect_to_api('account-users');
+    if (isset($response['error']) || !isset($response['data']) || !is_array($response['data'])) {
+        if (function_exists('ggt_log')) ggt_log("Account Sub-User Sync Failed: API Error or invalid response", 'CRON');
+        return;
+    }
+
+    $sub_users = $response['data'];
+    $count = count($sub_users);
+    if (function_exists('ggt_log')) ggt_log("Fetched {$count} account sub-users from API", 'CRON');
+
+    $created = 0;
+    $updated = 0;
+    $failed  = 0;
+    $skipped = 0;
+
+    foreach ($sub_users as $sub_user) {
+        if (empty($sub_user['email'])) {
+            $skipped++;
+            continue;
+        }
+
+        $email       = sanitize_email($sub_user['email']);
+        $account_ref = isset($sub_user['account_ref']) ? sanitize_text_field($sub_user['account_ref']) : '';
+        $name        = isset($sub_user['name'])        ? sanitize_text_field($sub_user['name'])        : '';
+        $sub_user_id = isset($sub_user['id'])          ? intval($sub_user['id'])                       : 0;
+
+        // Resolve WP user — prefer stored wordpress_user_id, fall back to email lookup
+        $wp_user_id = null;
+        if (!empty($sub_user['wordpress_user_id'])) {
+            $wp_user = get_user_by('ID', intval($sub_user['wordpress_user_id']));
+            if ($wp_user) {
+                $wp_user_id = $wp_user->ID;
+            }
+        }
+
+        if (!$wp_user_id) {
+            $wp_user_id = email_exists($email);
+        }
+
+        $is_new = false;
+
+        if (!$wp_user_id) {
+            // Create new WP user
+            $display_name = !empty($name) ? $name : $email;
+            $wp_user_id = wp_insert_user(array(
+                'user_login'   => $email,
+                'user_email'   => $email,
+                'user_pass'    => wp_generate_password(24),
+                'display_name' => $display_name,
+                'role'         => 'customer',
+            ));
+
+            if (is_wp_error($wp_user_id)) {
+                $failed++;
+                if (function_exists('ggt_log')) {
+                    ggt_log("Sub-User Sync FAILED to create {$email}: " . $wp_user_id->get_error_message(), 'CRON');
+                }
+                continue;
+            }
+
+            $is_new = true;
+            $created++;
+            if (function_exists('ggt_log')) {
+                ggt_log("Sub-User Sync: Created WP user {$wp_user_id} for {$email} (accountRef: {$account_ref})", 'CRON');
+            }
+        } else {
+            $updated++;
+            if (function_exists('ggt_log')) {
+                ggt_log("Sub-User Sync: Matched existing WP user {$wp_user_id} for {$email} (accountRef: {$account_ref})", 'CRON');
+            }
+        }
+
+        // Persist accountRef and sub-user meta on the WP user
+        if (!empty($account_ref)) {
+            update_user_meta($wp_user_id, 'accountRef', $account_ref);
+            ggt_apply_parent_account_ref_fields_to_user($wp_user_id, $account_ref);
+        }
+        update_user_meta($wp_user_id, 'ggt_needs_review', !empty($sub_user['needs_review']) ? 1 : 0);
+        update_user_meta($wp_user_id, 'ggt_is_sub_user', 1);
+
+        // Ensure role is 'customer' (existing users may have been registered as subscribers)
+        $wp_user_obj = get_user_by('ID', $wp_user_id);
+        if ($wp_user_obj && !in_array('customer', (array) $wp_user_obj->roles, true)) {
+            $wp_user_obj->set_role('customer');
+        }
+
+        // Write wordpress_user_id back to the API so future lookups are faster
+        if ($is_new && $sub_user_id > 0) {
+            ggt_sinappsus_connect_to_api(
+                "account-users/{$sub_user_id}",
+                array('wordpress_user_id' => $wp_user_id),
+                'PUT'
+            );
+        }
+    }
+
+    if (function_exists('ggt_log')) {
+        ggt_log("Account Sub-User Sync Complete: Created {$created}, Updated {$updated}, Failed {$failed}, Skipped {$skipped}", 'CRON');
+    }
+
+    update_option('ggt_last_sub_user_sync', array(
+        'created'   => $created,
+        'updated'   => $updated,
+        'failed'    => $failed,
+        'total'     => $count,
         'timestamp' => time(),
     ));
 }

@@ -30,6 +30,9 @@ add_action('woocommerce_blocks_loaded', function() {
 // Include checkout enhancements
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-checkout-enhancements.php';
 
+// Include registration enhancements (company-link checkbox on WooCommerce registration form)
+require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-registration-enhancements.php';
+
 // Include woocommerce customization for delivery date and auto passing additional payment methods
 require_once GGT_SINAPPSUS_PLUGIN_PATH . '/includes/class-woocommerce-customization.php';
 

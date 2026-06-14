@@ -96,7 +96,7 @@ function ggt_get_supported_user_api_fields_with_labels() {
         'accountStatusText'         => 'Account Status',
         'averagePayDays'            => 'Average Pay Days',
         'turnoverYtd'               => 'Turnover YTD',
-        // 'lastPaymentDate'        => 'Last Payment Date',  // Not in Vue form
+        // 'lastPaymentDate'        => 'Last Payment Daste',  // Not in Vue form
         // 'recordCreateDate'       => 'Record Create Date', // Not in Vue form
         // 'recordModifyDate'       => 'Record Modify Date', // Not in Vue form
         // 'lastDateSynched'        => 'Last Date Synched',  // Not in Vue form
@@ -107,7 +107,7 @@ function ggt_get_supported_user_api_fields_with_labels() {
         'creditPosition'            => 'Credit Position',
 
         // Misc/Analysis
-        'analysis1'                 => 'Cust. Type',
+        'analysis1'                 => 'KAM',
         'analysis2'                 => 'Resp. Rep',
         'analysis3'                 => 'Region',
         'analysis4'                 => 'Analysis 4',

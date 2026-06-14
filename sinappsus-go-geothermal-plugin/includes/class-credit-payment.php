@@ -166,16 +166,8 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
 
             // 2. Check for Success (200-299)
             if ($response_code >= 200 && $response_code < 300) {
-                // Figure out which key to use for updating balance
-                $balance_key = 'Balance'; // Default
-                if (get_user_meta($user_id, 'Balance', true) !== '') {
-                    $balance_key = 'Balance';
-                } else if (get_user_meta($user_id, 'balance', true) !== '') {
-                    $balance_key = 'balance';
-                }
-
-                // Increase the balance by the order total
-                update_user_meta($user_id, $balance_key, floatval($balance) + floatval($order->get_total()));
+                $updated_balance = floatval($balance) + floatval($order->get_total());
+                $this->update_account_ref_balances($user_id, $updated_balance);
 
                 // Mark order as completed
                 $order->payment_complete();
@@ -358,6 +350,49 @@ class WC_Geo_Credit_Gateway extends WC_Payment_Gateway {
         }
 
         return $response;
+    }
+
+    /**
+     * Update the shared balance for every WP user on the same accountRef.
+     */
+    private function update_account_ref_balances($user_id, $new_balance) {
+        $related_user_ids = $this->get_account_ref_user_ids($user_id);
+
+        foreach ($related_user_ids as $related_user_id) {
+            $balance_key = 'balance';
+            if (get_user_meta($related_user_id, 'Balance', true) !== '') {
+                $balance_key = 'Balance';
+            } else if (get_user_meta($related_user_id, 'balance', true) !== '') {
+                $balance_key = 'balance';
+            }
+
+            update_user_meta($related_user_id, $balance_key, $new_balance);
+        }
+    }
+
+    /**
+     * Get all WP user IDs that share the current user's accountRef.
+     */
+    private function get_account_ref_user_ids($user_id) {
+        $user_ids = array(intval($user_id));
+        $account_ref = get_user_meta($user_id, 'accountRef', true);
+
+        if (empty($account_ref)) {
+            return $user_ids;
+        }
+
+        $matching_user_ids = get_users(array(
+            'fields'     => 'ids',
+            'meta_key'   => 'accountRef',
+            'meta_value' => $account_ref,
+            'number'     => -1,
+        ));
+
+        if (!empty($matching_user_ids)) {
+            $user_ids = array_merge($user_ids, array_map('intval', $matching_user_ids));
+        }
+
+        return array_values(array_unique($user_ids));
     }
 
     private function get_token()
